@@ -1,0 +1,26 @@
+
+    🏥 **MRI Scan Medical Report**
+    ------------------------------------
+    📌 **Scan File:** /Users/malhar.inamdar/Desktop/report/images/OAS1_0043_MR1_mpr-3_anon.img
+
+    📊 **Basic Statistical Analysis:**
+    - 🔹 Minimum Intensity: 0.000000
+    - 🔹 Maximum Intensity: 4095.000000
+    - 🔹 Mean Intensity: 907.029796
+    - 🔹 Brain Volume: 3163164 mm³
+    - 🔹 Median Intensity: 3953955.000000
+    - 🔹 Standard Deviation: 807.000000
+
+    🧠 **Tissue Volume Analysis (via FAST segmentation):**
+    - 💧 Cerebrospinal Fluid (CSF) Volume: 1253307.500000 mm³
+    - 🧠 Grey Matter (GM) Volume: 1454192.500000 mm³
+    - ⚪ White Matter (WM) Volume: 1246455.000000 mm³
+
+    📋 **Medical Interpretation:**
+    - ✅ Normal brain tissue usually exhibits intensity values within a specific range.
+    - ⚠️ Regions with unusually high intensities may indicate lesions or abnormal growth.
+    - ⚠️ Lower mean intensities could be associated with atrophy or degeneration.
+    
+    📌 **Recommendation:**
+    - If any abnormalities are suspected, further evaluation (e.g., with additional radiological studies or a neurologist consultation) is advised.
+    
