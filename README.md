@@ -1,5 +1,5 @@
 # Vaidya Nidaan
-**3rd Prize** out of 400+ teams at PICT Techfiesta 2025 Hackathon
+> 🏅 **3rd Place** (among 400+ teams) at PICT Techfiesta 2025 Hackathon
 
 ![Project Logo](docs/images/op1.jpeg)
 
