@@ -1,5 +1,6 @@
 # Vaidya Nidaan
-3rd place out of 400+ teams, PICT Techfiesta 2025 Hackathon
+**3rd Prize** out of 400+ teams at PICT Techfiesta 2025 Hackathon
+
 ![Project Logo](docs/images/op1.jpeg)
 
 > **Vaidya Nidaan** is an AI-powered diagnostic assistance system for Alzheimer’s detection using MRI scans, biomarker extraction with FSL, and explainability via Grad-CAM. The platform integrates VGG-19 for classification, FSL for biomarker computation, and GPT-4-turbo for an interactive multilingual chatbot (English, Hindi, Marathi).
