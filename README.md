@@ -169,9 +169,9 @@ curl -X POST "http://localhost:4000/api/v1/scan/analyze" \
 
 ![Heatmap Overlay](docs/images/grm.png)
 
-**Biomarker Report Snippet**
+**Chatbot Interface**
 
-![Biomarkers Report](docs/images/cb.jpeg)
+![Multilingual Chatbot](docs/images/cb.jpeg)
 
 ---
 
