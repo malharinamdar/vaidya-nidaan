@@ -198,26 +198,20 @@ flowchart LR
 
 ---
 
-## 🤝 Contributing
-
-1. Fork the repository  
-2. Create a feature branch: `git checkout -b feature/YourFeature`  
-3. Commit your changes: `git commit -m "feat: Add ..."`  
-4. Push to the branch: `git push origin feature/YourFeature`  
-5. Open a pull request
-
-Please adhere to the existing code style and add tests for new features.
-
----
-
 ## 📄 License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
-
 ## 📬 Contact
 
-**Team MarkerMinds AI**   
-Maintainer: Malhar Inamdar (<malhar.inamdar.097@gmail.com>)  
-Web: https://malharinamdar.github.io
+**Team MarkerMinds AI**
+
+**Team Members:**
+- Malhar Inamdar (Maintainer of this repo) – <malhar.inamdar.097@gmail.com>  
+- Manorama Mudgal  
+- Vedant Joshi  
+- Prajwal Mandlecha  
+- Aditya Bhalgat  
+
+🌐 Web: [malharinamdar.github.io](https://malharinamdar.github.io)
