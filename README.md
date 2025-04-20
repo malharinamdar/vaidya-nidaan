@@ -1,5 +1,5 @@
 # Vaidya Nidaan
-*Vaidya Nidaan translates from Sanskrit/Hindi as "Medical Diagnosis".*
+*'Vaidya Nidaan' translates from Sanskrit/Hindi as "Medical Diagnosis".*
 
 > 🏅 **3rd Place** (among 400+ teams) at PICT Techfiesta 2025 Hackathon
 
