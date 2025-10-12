@@ -5,7 +5,7 @@
 
 ![Project Logo](docs/images/op1.jpeg)
 
-> **Vaidya Nidaan** is an AI-powered diagnostic assistance system for Alzheimer’s detection using MRI scans, biomarker extraction with FSL, and explainability via Grad-CAM. The platform integrates VGG-19 for classification, FSL for biomarker computation, and GPT-4-turbo for an interactive multilingual chatbot (English, Hindi, Marathi).
+> **Vaidya Nidaan** is an AI-powered diagnostic assistance system for Alzheimer’s detection using MRI scans, biomarker extraction with FSL, and explainability via Grad-CAM. The platform integrates VGG-19 for classification, FSL for biomarker computation, and GPT-4-turbo for an interactive multilingual chatbot (English, Hindi, Marathi, any regional Indian language).
 
 ---
 
