@@ -14,7 +14,7 @@
 - **MRI Classification**: 95 % accuracy Alzheimer’s detection with a fine-tuned VGG-19 model.
 - **Explainability**: Grad-CAM++ heatmap overlays highlight impacted regions.
 - **Biomarker Extraction**: Automated volume metrics & statistical biomarkers via FSL.
-- **Multilingual Chatbot**: GPT-4-turbo RAG chatbot supporting English, Hindi, and Marathi.
+- **Multilingual Chatbot**: GPT-4-turbo RAG chatbot providing support to Indian regional languages as well.
 - **Scalable Storage**: Multer for local uploads & Cloudinary for cloud-based image hosting.
 - **Secure Backend**: Node.js API with JWT auth in HTTP-only cookies and PostgreSQL via Prisma.
 
