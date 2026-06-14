@@ -192,7 +192,7 @@ function DiagnosisReportPage() {
 
             <div className="text-center">
               <button onClick={downloadReport} className="px-8 py-3 text-white bg-[#388e3c] rounded-lg shadow-md hover:bg-[#2c6d31] transition">
-                ⬇ Download Full Report (.txt)
+                Download Full Report (.txt)
               </button>
             </div>
           </section>

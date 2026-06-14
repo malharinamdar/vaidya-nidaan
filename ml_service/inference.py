@@ -20,9 +20,7 @@ from PIL import Image, ImageFilter
 import config
 from config import DEMENTIA_CLASSES
 
-# ---------------------------------------------------------------------------
 # Optional TensorFlow model (loaded lazily, once).
-# ---------------------------------------------------------------------------
 _tf = None
 _model = None
 _model_tried = False
@@ -53,9 +51,7 @@ def backend_name():
     return "tensorflow" if _try_load_model() is not None else "numpy-fallback"
 
 
-# ---------------------------------------------------------------------------
-# Image helpers
-# ---------------------------------------------------------------------------
+# Image helpers.
 def load_image(file_bytes, size=(224, 224)):
     img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     return img.resize(size)
@@ -73,9 +69,7 @@ def _softmax(x):
     return e / e.sum()
 
 
-# ---------------------------------------------------------------------------
 # Model input preprocessing (configurable; "auto" probes the model once).
-# ---------------------------------------------------------------------------
 def _model_side(model):
     try:
         shape = model.input_shape
@@ -143,9 +137,7 @@ def _model_input(model, img):
     return np.expand_dims(_apply_preprocess(arr255, mode), 0)
 
 
-# ---------------------------------------------------------------------------
-# Classification
-# ---------------------------------------------------------------------------
+# Classification.
 def _fallback_logits(img: Image.Image):
     """Deterministic 4-class logits derived from grey-matter intensity features.
 
@@ -205,9 +197,7 @@ def classify(file_bytes):
     return label, round(alzheimer_probability, 2), per_class, message
 
 
-# ---------------------------------------------------------------------------
-# Grad-CAM++ heatmap
-# ---------------------------------------------------------------------------
+# Grad-CAM++ heatmap.
 def _jet_colormap(gray01):
     """Map a 0..1 array to RGB using a Matplotlib-'jet'-like colormap (pure NumPy)."""
     x = np.clip(gray01, 0.0, 1.0)

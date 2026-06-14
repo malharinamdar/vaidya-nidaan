@@ -277,7 +277,7 @@ function ProfilePage() {
             <button
                 onClick={handleDiagnosisReport}
                 className="px-6 py-3 text-white bg-[#2e7d32] rounded-lg shadow-md hover:bg-[#1b5e20] transition duration-300 font-semibold">
-                📋 Full Diagnosis Report
+                Full Diagnosis Report
             </button>
           </div>
         </div>

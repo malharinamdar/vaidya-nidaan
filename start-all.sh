@@ -13,7 +13,7 @@ if [ -x "$ML_DIR/.venv/bin/python" ]; then
   ML_PY="$ML_DIR/.venv/bin/python"
 else
   ML_PY="$(command -v python3.12 || command -v python3)"
-  echo "⚠️  ml_service/.venv not found — using $ML_PY (run the install step in RUN_LOCAL.md)."
+  echo "Warning: ml_service/.venv not found — using $ML_PY (run the install step in RUN_LOCAL.md)."
 fi
 
 pids=()
@@ -26,15 +26,15 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-echo "▶ ML service   → http://localhost:${ML_PORT:-5001}"
+echo "ML service   -> http://localhost:${ML_PORT:-5001}"
 ( cd "$ML_DIR" && "$ML_PY" app.py 2>&1 | sed 's/^/[ml]   /' ) &
 pids+=($!)
 
-echo "▶ Backend API  → http://localhost:5005"
+echo "Backend API  -> http://localhost:5005"
 ( cd "$BACKEND_DIR" && npm start 2>&1 | sed 's/^/[api]  /' ) &
 pids+=($!)
 
-echo "▶ Frontend     → http://localhost:5173"
+echo "Frontend     -> http://localhost:5173"
 ( cd "$FRONTEND_DIR" && npm run dev 2>&1 | sed 's/^/[web]  /' ) &
 pids+=($!)
 

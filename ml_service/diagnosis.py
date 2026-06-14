@@ -14,21 +14,17 @@ def _structured_text(prediction, biomarkers, biomarker_report, rationale, patien
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     per_class = prediction.get("per_class", {})
     lines = [
-        "================================================================",
-        "        VAIDYA NIDAAN — STRUCTURED MEDICAL DIAGNOSIS REPORT",
-        "================================================================",
+        "VAIDYA NIDAAN - STRUCTURED MEDICAL DIAGNOSIS REPORT",
         f"Generated: {ts}",
     ]
     if patient:
         lines.append("")
         lines.append("PATIENT")
-        lines.append("----------------------------------------------------------------")
         for k, v in patient.items():
             lines.append(f"  {k.replace('_',' ').title()}: {v}")
     lines += [
         "",
         "1. AI MODEL PREDICTION (VGG-19 Alzheimer classifier)",
-        "----------------------------------------------------------------",
         f"  Predicted class      : {prediction.get('prediction')}",
         f"  Dementia probability : {prediction.get('alzheimer_probability')}%",
         "  Per-class probabilities:",
@@ -38,26 +34,21 @@ def _structured_text(prediction, biomarkers, biomarker_report, rationale, patien
     lines += [
         "",
         "2. EXPLAINABILITY (Grad-CAM++)",
-        "----------------------------------------------------------------",
         "  Heatmap generated over the last VGG-19 convolutional block",
         "  (block5_conv4) highlighting the regions that most influenced the",
         "  prediction. See the overlay image in the report view.",
         "",
         f"3. BIOMARKER ANALYSIS ({source})",
-        "----------------------------------------------------------------",
     ]
     for k, v in biomarkers.items():
         lines.append(f"  {k.replace('_',' ').title()}: {v}")
     lines += [
         "",
         "4. CLINICAL RATIONALE (LLM)",
-        "----------------------------------------------------------------",
         rationale,
         "",
-        "================================================================",
-        "⚠️  Decision-support tool — NOT a diagnosis. Confirm with a qualified",
-        "    radiologist / neurologist before any clinical decision.",
-        "================================================================",
+        "Note: Decision-support tool - NOT a diagnosis. Confirm with a qualified",
+        "radiologist / neurologist before any clinical decision.",
     ]
     return "\n".join(lines)
 

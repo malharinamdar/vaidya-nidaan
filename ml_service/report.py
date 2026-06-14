@@ -138,13 +138,12 @@ def _image_stats_fallback(file_bytes):
 
 def _format_report(biomarkers, source, filename, native_volume):
     lines = [
-        "🏥 MRI Biomarker Analysis Report",
-        "------------------------------------",
-        f"📌 Scan File: {filename}",
-        f"🧪 Analysis Source: {source}",
-        f"🧊 Input type: {'native 3D volume' if native_volume else '2D slice (converted to volume for segmentation)'}",
+        "MRI Biomarker Analysis Report",
+        f"Scan File: {filename}",
+        f"Analysis Source: {source}",
+        f"Input type: {'native 3D volume' if native_volume else '2D slice (converted to volume for segmentation)'}",
         "",
-        "📊 Biomarkers:",
+        "Biomarkers:",
     ]
     order = [
         "brain_volume_mm3", "csf_volume_mm3", "grey_matter_volume_mm3", "white_matter_volume_mm3",
@@ -162,12 +161,12 @@ def _format_report(biomarkers, source, filename, native_volume):
             lines.append(f"  - {k.replace('_', ' ').title()}: {v}")
     lines += [
         "",
-        "📋 Interpretation guide:",
+        "Interpretation guide:",
         "  - Reduced grey-matter fraction / lower GM:WM ratio and enlarged CSF fraction",
         "    are commonly associated with cortical atrophy seen in Alzheimer's disease.",
         "  - A native 3D T1 scan is required for hippocampal (FIRST) subcortical volumetry.",
         "",
-        "⚠️ Research/education tool — not a substitute for professional diagnosis.",
+        "Note: Research/education tool - not a substitute for professional diagnosis.",
     ]
     return "\n".join(lines)
 
