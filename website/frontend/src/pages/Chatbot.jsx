@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import { Link, useParams } from "react-router-dom";
 import { FiPaperclip } from "react-icons/fi"; // Import the file icon
+import { ML_BASE } from "../api";
 
 function ChatWithAIPage() {
   const { userId } = useParams();
@@ -46,11 +47,11 @@ function ChatWithAIPage() {
       formData.append("file", file); 
     }
   
-    let endpoint = "http://localhost:5000/api/query1"; // Default endpoint (for first query with file)
-    
+    let endpoint = `${ML_BASE}/api/query1`; // Default endpoint (for first query with file)
+
     // If there is no file, use the second endpoint
     if (!file) {
-      endpoint = "http://localhost:5000/api/query2"; // Endpoint for follow-up question (only text)
+      endpoint = `${ML_BASE}/api/query2`; // Endpoint for follow-up question (only text)
     }
   
     try {

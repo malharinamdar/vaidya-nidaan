@@ -6,7 +6,18 @@ const router = express.Router();
 
 // Add a new patient (Protected route)
 router.post('/', protect, async (req, res) => {
-  const { name, email, age, gender, brainScan, alzheimerBiomarkers, cognitiveTests } = req.body;
+  const {
+    name,
+    email,
+    age,
+    gender,
+    smoker,
+    alcoholConsumption,
+    neurologicalCondition,
+    brainScan,
+    alzheimerBiomarkers,
+    cognitiveTests,
+  } = req.body;
 
   try {
     const patient = new Patient({
@@ -14,10 +25,13 @@ router.post('/', protect, async (req, res) => {
       email,
       age,
       gender,
+      smoker,
+      alcoholConsumption,
+      neurologicalCondition,
       brainScan,
       alzheimerBiomarkers,
       cognitiveTests,
-      doctor: req.user.doctorId, 
+      doctor: req.user.doctorId,
     });
 
     await patient.save();
@@ -39,7 +53,7 @@ router.post('/', protect, async (req, res) => {
 router.get('/', protect, async (req, res) => {
   try {
     const patients = await Patient.find({ doctor: req.user.doctorId });
-    res.json(patients);
+    res.json({ patients });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error while fetching patients' });
@@ -66,7 +80,7 @@ router.get('/:id', protect, async (req, res) => {
       return res.status(404).json({ message: 'Patient not found' });
     }
 
-    res.json(patient);
+    res.json({ patient });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error while fetching patient details' });
@@ -75,7 +89,19 @@ router.get('/:id', protect, async (req, res) => {
 
 // Update patient details (Protected route)
 router.put('/:id', protect, async (req, res) => {
-  const { name, email, age, gender, brainScan, alzheimerBiomarkers, cognitiveTests } = req.body;
+  const {
+    name,
+    email,
+    age,
+    gender,
+    smoker,
+    alcoholConsumption,
+    neurologicalCondition,
+    brainScan,
+    alzheimerBiomarkers,
+    alzheimerResult,
+    cognitiveTests,
+  } = req.body;
 
   try {
     const patient = await Patient.findOne({ _id: req.params.id, doctor: req.user.doctorId });
@@ -87,8 +113,12 @@ router.put('/:id', protect, async (req, res) => {
     patient.email = email || patient.email;
     patient.age = age || patient.age;
     patient.gender = gender || patient.gender;
+    patient.smoker = smoker || patient.smoker;
+    patient.alcoholConsumption = alcoholConsumption || patient.alcoholConsumption;
+    patient.neurologicalCondition = neurologicalCondition || patient.neurologicalCondition;
     patient.brainScan = brainScan || patient.brainScan;
     patient.alzheimerBiomarkers = alzheimerBiomarkers || patient.alzheimerBiomarkers;
+    patient.alzheimerResult = alzheimerResult || patient.alzheimerResult;
     patient.cognitiveTests = cognitiveTests || patient.cognitiveTests;
 
     await patient.save();

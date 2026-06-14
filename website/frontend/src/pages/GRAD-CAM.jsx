@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-import { Link, useParams } from "react-router-dom"; // Use useParams to get the userID from the URL
-import axios from "axios";
+import { Link, useParams } from "react-router-dom"; // Use useParams to get the userId from the URL
+import { ML_BASE } from "../api";
 
 function GradCamAnalysisPage() {
-  const { userId } = useParams(); // Fetch the userID from the URL
+  const { userId } = useParams(); // Fetch the userId from the URL
 
   const initialData = {
     image: null,
@@ -12,32 +12,35 @@ function GradCamAnalysisPage() {
 
   const [data, setData] = useState(initialData);
   const [imageFile, setImageFile] = useState(null); // Store the uploaded file
-  const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false); // Track if Grad-CAM is being processed
+  const [error, setError] = useState(null);
 
   // Handle Image File Selection
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file) {
       setImageFile(file);
-      setData({ ...data, image: URL.createObjectURL(file) }); // Show selected image in UI
+      setError(null);
+      setData({ image: URL.createObjectURL(file), gradCamResult: null }); // Show selected image in UI
     }
   };
 
   // Handle Grad-CAM Analysis
   const handleGradCamAnalysis = async () => {
-
+    if (!imageFile) {
+      setError("Please upload an image first.");
+      return;
+    }
 
     setIsProcessing(true);
     setError(null);
-    setData(null);
 
     const formData = new FormData();
     formData.append("file", imageFile);
 
     try {
-      const response = await fetch(`http://localhost:5005/api/patients/${userID}/gradcam`, {
-        method: 'POST',
+      const response = await fetch(`${ML_BASE}/api/patients/${userId}/gradcam`, {
+        method: "POST",
         body: formData,
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -45,19 +48,20 @@ function GradCamAnalysisPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process Grad-CAM analysis.');
+        throw new Error("Failed to process Grad-CAM analysis.");
       }
 
       const result = await response.json();
       setData({
-        gradCamResult: result.gradCamResult, // The URL of the heatmap image
-        image: result.mriUrl, // The URL of the MRI image
+        gradCamResult: result.gradCamResult, // heatmap overlay (data URL)
+        image: result.mriUrl, // preprocessed MRI (data URL)
       });
-    } catch (error) {
+    } catch (err) {
+      setError(err.message);
     } finally {
       setIsProcessing(false);
     }
-};
+  };
 
 
   return (
@@ -84,7 +88,7 @@ function GradCamAnalysisPage() {
             onChange={handleFileChange}
             className="w-full border-2 border-gray-300 p-2 rounded-lg mb-4"
           />
-          {isUploading && <p className="text-gray-500">Uploading image...</p>}
+          {error && <p className="text-red-500 mt-2">{error}</p>}
         </div>
 
         {/* Uploaded Image Section */}

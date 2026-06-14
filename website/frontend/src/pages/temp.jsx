@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
+import { ML_BASE } from "../api";
 
 const FileUpload = () => {
     const [file, setFile] = useState(null);
@@ -16,18 +17,18 @@ const FileUpload = () => {
         }
 
         const formData = new FormData();
-        formData.append("mri", file);
+        formData.append("file", file);
 
         try {
-            const response = await axios.post("http://localhost:5005/upload/gradcam", formData, {
+            const response = await axios.post(`${ML_BASE}/gradcam`, formData, {
                 headers: {
                     Authorization: `Bearer ${localStorage.getItem("token")}`,
                     "Content-Type": "multipart/form-data",
                 },
             });
 
-            if (response.data.cloudinaryUrl) {
-                setUploadedUrl(response.data.cloudinaryUrl);
+            if (response.data.gradCamResult) {
+                setUploadedUrl(response.data.gradCamResult);
             }
         } catch (error) {
             console.error("Error uploading file:", error);

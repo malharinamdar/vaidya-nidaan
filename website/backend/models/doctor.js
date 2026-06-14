@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 // Doctor Schema
 const doctorSchema = new mongoose.Schema({
@@ -28,18 +29,21 @@ const doctorSchema = new mongoose.Schema({
       ref: 'Patient', // Reference to the Patient model
     },
   ],
+}, {
+  timestamps: true,
+  toJSON: {
+    transform(_doc, ret) {
+      ret.id = ret._id; // expose `id` for the frontend
+      delete ret.__v;
+      return ret;
+    },
+  },
 });
 
-// Compare passwords during login (No hashing)
+// Compare passwords during login (using bcryptjs)
 doctorSchema.methods.matchPassword = async function (password) {
   try {
-    console.log("Password to compare:", password);  // Log the password being compared
-    console.log("Stored Password in DB:", this.password);  // Log the stored password in DB
-
-    // Directly compare the input password with the stored password in DB (no hashing)
-    const match = password === this.password;
-    console.log("Password Comparison Result:", match);  // Log the comparison result
-
+    const match = await bcrypt.compare(password, this.password);
     return match;  // Return true if passwords match, else false
   } catch (error) {
     console.error('Error comparing passwords:', error);

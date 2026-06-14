@@ -10,6 +10,8 @@ import PrivateRoute from './components/PrivateRoute';
 import ProfilePage from './pages/ProfilePage';
 import AlzheimerDetectionPage from './pages/AlzeimerDetection';
 import GradCamAnalysisPage from './pages/GRAD-CAM';
+import BiomarkerAnalysisPage from './pages/BiomarkerAnalysis';
+import DiagnosisReportPage from './pages/DiagnosisReport';
 import ChatWithAIPage from './pages/Chatbot';
 import FileUpload from './pages/temp';
 function App() {
@@ -22,6 +24,8 @@ function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/profile/:userId" element={<ProfilePage />} />
           <Route path="/grad-cam/:userId" element={<GradCamAnalysisPage />} />
+          <Route path="/biomarker-analysis/:userId" element={<BiomarkerAnalysisPage />} />
+          <Route path="/diagnosis-report/:userId" element={<DiagnosisReportPage />} />
           <Route path="/alzheimers-detection/:userId" element={<AlzheimerDetectionPage />} />
           <Route path="/chat-with-ai/:userId" element={<ChatWithAIPage />} />
           <Route path="/file-upload" element={<FileUpload />} />

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { motion } from "framer-motion";
+import { API_BASE } from "../api";
 
 function ProfilePage() {
   const { userId } = useParams();
@@ -18,7 +19,7 @@ function ProfilePage() {
           throw new Error("Authentication token is missing");
         }
 
-        const response = await axios.get(`http://localhost:5005/api/patients/${userId}`, {
+        const response = await axios.get(`${API_BASE}/api/patients/${userId}`, {
           headers: {
             "Authorization": `Bearer ${token}`,
           },
@@ -53,6 +54,14 @@ function ProfilePage() {
     navigate(`/grad-cam/${userId}`);
   };
 
+  const handleBiomarkerAnalysis = () => {
+    navigate(`/biomarker-analysis/${userId}`);
+  };
+
+  const handleDiagnosisReport = () => {
+    navigate(`/diagnosis-report/${userId}`);
+  };
+
   const handleChange = (e) => {
     setEditedData({ ...editedData, [e.target.name]: e.target.value });
   };
@@ -65,7 +74,7 @@ function ProfilePage() {
       }
 
       const response = await axios.put(
-        `http://localhost:5005/api/patients/${userId}`,
+        `${API_BASE}/api/patients/${userId}`,
         editedData,
         {
           headers: {
@@ -256,9 +265,19 @@ function ProfilePage() {
                 Chat with AI
             </button>
             <button
-                onClick={handleGradCAMAnalysis} 
+                onClick={handleGradCAMAnalysis}
                 className="px-6 py-3 text-white bg-[#0A0A32] rounded-lg shadow-md hover:bg-[#0277bd] transition duration-300">
                 Grad-CAM Analysis
+            </button>
+            <button
+                onClick={handleBiomarkerAnalysis}
+                className="px-6 py-3 text-white bg-[#0A0A32] rounded-lg shadow-md hover:bg-[#0277bd] transition duration-300">
+                Biomarker Analysis
+            </button>
+            <button
+                onClick={handleDiagnosisReport}
+                className="px-6 py-3 text-white bg-[#2e7d32] rounded-lg shadow-md hover:bg-[#1b5e20] transition duration-300 font-semibold">
+                📋 Full Diagnosis Report
             </button>
           </div>
         </div>

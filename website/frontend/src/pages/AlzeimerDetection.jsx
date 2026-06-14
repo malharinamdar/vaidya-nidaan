@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { ML_BASE } from '../api';
 
 const AlzheimerDetectionPage = () => {
   const [file, setFile] = useState(null);
@@ -39,7 +40,7 @@ const AlzheimerDetectionPage = () => {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:5005/prediction', {
+      const response = await fetch(`${ML_BASE}/prediction`, {
         method: 'POST',
         body: formData,
       });

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { API_BASE } from "../api";
 
 function Login() {
   const [email, setEmail] = useState("");
@@ -14,7 +15,7 @@ function Login() {
     setError(""); // Reset error state
 
     try {
-      const response = await axios.post("http://localhost:5005/api/doctors/login", {
+      const response = await axios.post(`${API_BASE}/api/doctors/login`, {
         email,
         password,
       });

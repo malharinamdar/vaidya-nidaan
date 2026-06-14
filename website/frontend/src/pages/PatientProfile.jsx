@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { API_BASE } from "../api";
 
 function PatientProfile() {
   const match = useMatch("/patient/:patientId");
@@ -26,7 +27,7 @@ function PatientProfile() {
         }
 
         const response = await axios.get(
-          `http://localhost:5005/api/patients/${patientId}`,
+          `${API_BASE}/api/patients/${patientId}`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -34,8 +35,8 @@ function PatientProfile() {
           }
         );
 
-        setPatient(response.data);
-        setOriginalPatientData(response.data);
+        setPatient(response.data.patient);
+        setOriginalPatientData(response.data.patient);
         setLoading(false);
       } catch (err) {
         setError(err.response?.data?.message || "Failed to load patient data.");
@@ -84,7 +85,7 @@ function PatientProfile() {
       }
 
       const response = await axios.put(
-        `http://localhost:5005/api/patients/${patientId}`,
+        `${API_BASE}/api/patients/${patientId}`,
         patient,
         {
           headers: {
@@ -93,7 +94,8 @@ function PatientProfile() {
         }
       );
 
-      setOriginalPatientData(response.data);
+      setOriginalPatientData(response.data.patient);
+      setPatient(response.data.patient);
       setIsEditing(false);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update patient data.");

@@ -18,11 +18,14 @@ router.post('/signup', async (req, res) => {
 
 
     
+    // Hash the password before saving
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
     // Create and save the new doctor
     const doctor = new Doctor({
       name,
       email,
-      password: password,
+      password: hashedPassword,
       specialty,
     });
 
@@ -53,7 +56,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { doctorId: doctor._id },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '30d' }
     );
 
     res.json({ token });

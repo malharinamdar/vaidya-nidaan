@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { API_BASE } from "../api";
 
 function Signup() {
   const [formData, setFormData] = useState({
@@ -26,7 +27,7 @@ function Signup() {
     try {
       // Send form data to backend for doctor signup
       const response = await axios.post(
-        "http://localhost:5005/api/doctors/signup",
+        `${API_BASE}/api/doctors/signup`,
         formData
       );
 

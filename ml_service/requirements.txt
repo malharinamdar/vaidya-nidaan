@@ -1,0 +1,20 @@
+# Vaidya Nidaan ML / inference service dependencies.
+# Install with Python 3.12 (recommended on macOS arm64 for TensorFlow wheels).
+
+# --- Web service (always required) -------------------------------------------
+Flask==3.0.3
+flask-cors==5.0.0
+numpy>=1.26,<2.2
+Pillow>=10.0
+requests>=2.31
+python-dotenv>=1.0
+
+# --- Real Alzheimer model (VGG-19) + Grad-CAM++ ------------------------------
+tensorflow==2.19.0          # loads alzheimer_model.h5 and runs Grad-CAM++
+huggingface_hub>=0.24       # downloads the trained model from the private HF repo
+
+# --- FSL biomarker report (volumetric inputs) --------------------------------
+nibabel>=5.2                # NIfTI / Analyze (.nii/.img) handling
+
+# --- Multilingual GPT-4 chatbot ----------------------------------------------
+openai>=1.40

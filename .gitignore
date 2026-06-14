@@ -1,0 +1,35 @@
+# Secrets & local env
+.env
+**/.env
+!**/.env.example
+
+# Python
+ml_service/.venv/
+**/__pycache__/
+*.pyc
+
+# Node
+website/backend/node_modules/
+website/frontend/node_modules/
+website/frontend/dist/
+
+# Model cache / downloads
+ml_service/models/
+.cache/
+
+# FSL / ML scratch outputs
+*.nii.gz
+brain_extracted.*
+fast_output*
+first_output*
+advanced_mri_report.txt
+
+# Uploads
+website/backend/uploads/
+
+# Editor / tooling
+.claude/
+*.log
+
+# OS
+.DS_Store

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom"; // Import useNavigate
+import { API_BASE } from "../api";
 
 const CreatePatientForm = () => {
   const [formData, setFormData] = useState({
@@ -28,7 +29,7 @@ const CreatePatientForm = () => {
       const token = localStorage.getItem("token");
 
       const response = await axios.post(
-        "http://localhost:5005/api/patients",
+        `${API_BASE}/api/patients`,
         formData,
         {
           headers: {
