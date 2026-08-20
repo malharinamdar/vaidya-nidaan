@@ -56,7 +56,10 @@ function DiagnosisReportPage() {
         body: formData,
         headers: authHeader(),
       });
-      if (!res.ok) throw new Error("Failed to generate diagnosis report.");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to generate diagnosis report.");
+      }
       const data = await res.json();
       setResult(data);
     } catch (err) {
@@ -189,6 +192,33 @@ function DiagnosisReportPage() {
 {result.rationale}
               </pre>
             </div>
+
+            {/* 5. RAG-retrieved literature backing the rationale */}
+            {result.literature && result.literature.length > 0 && (
+              <div>
+                <h2 className="text-2xl font-bold mb-3">5. Related Literature (retrieved for this finding)</h2>
+                <p className="text-sm text-gray-500 mb-3">
+                  Topically-relevant papers retrieved from PubMed/MEDLINE for the clinician&apos;s
+                  reference — related reading to consult, not claim-level evidence for this patient.
+                </p>
+                <ul className="space-y-2">
+                  {result.literature.map((c) => (
+                    <li key={c.n} className="text-sm">
+                      <span className="font-semibold">[{c.n}]</span>{" "}
+                      <a
+                        href={c.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-700 underline"
+                      >
+                        {c.title}
+                      </a>{" "}
+                      <span className="text-gray-500">({c.year})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="text-center">
               <button onClick={downloadReport} className="px-8 py-3 text-white bg-[#388e3c] rounded-lg shadow-md hover:bg-[#2c6d31] transition">

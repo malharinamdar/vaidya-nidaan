@@ -5,6 +5,7 @@ Uses OpenAI GPT-4o (vision-capable, mirrors ``research/notebooks/chatbot_rag.ipy
 answers locally so the chat feature works without any external service or key.
 """
 import base64
+import re
 
 from config import OPENAI_API_KEY, OPENAI_MODEL
 
@@ -83,15 +84,26 @@ def _offline_answer(text, has_image):
 
 
 RATIONALE_SYSTEM = (
-    "You are a clinical decision-support assistant for neurologists. You are given the "
-    "output of a VGG-19 Alzheimer's MRI classifier, a Grad-CAM++ explainability summary, "
-    "and FSL-derived brain biomarkers. Write a concise, structured clinical rationale that "
-    "interprets these findings together. Reference the specific probabilities and biomarker "
-    "values. Comment on whether the biomarkers (grey-matter fraction, GM:WM ratio, CSF "
-    "fraction, brain volume) are consistent or inconsistent with the model's prediction, and "
-    "what they suggest about cortical atrophy. Use clear headings. Be objective, do not "
-    "overstate certainty, and end with an explicit reminder that this is decision support, "
-    "not a diagnosis, and must be confirmed by a qualified clinician."
+    "You are a clinical decision-support assistant for neurologists. You are given a VGG-19 "
+    "Alzheimer's MRI classifier output, a Grad-CAM++ explainability summary, FSL-derived brain "
+    "biomarkers, and (optionally) numbered excerpts from the medical literature. Write a concise, "
+    "structured clinical rationale interpreting these together, under clear plain-text headings. "
+    "Do NOT use Markdown formatting -- no asterisks or bold (**), no underscores, no hash (#) "
+    "symbols; write each heading as plain words on its own line.\n"
+    "Follow these rules strictly:\n"
+    "- The biomarkers are computed from a SINGLE 2D MRI slice expanded into a pseudo-volume, so the "
+    "absolute volumes are only approximate and just the tissue fractions/ratios are indicative. Say "
+    "this explicitly and do NOT over-interpret the numbers as definitive atrophy.\n"
+    "- You are given only a short TEXT note about the Grad-CAM++ heatmap, NOT the image itself. Do "
+    "NOT claim the model's spatial focus was appropriate, correct, or on-target, and do NOT infer "
+    "that from the absence of a warning. State that the heatmap's anatomical location must be "
+    "reviewed visually by the clinician before the attribution is trusted.\n"
+    "- The provided LITERATURE is topically-related reference material for the clinician, NOT proof of "
+    "any patient-specific finding. You may point to it as related reading (e.g. 'see related literature "
+    "[1]-[3]'), but do NOT assert that it supports or confirms the prediction or biomarkers, and do NOT "
+    "fabricate citations.\n"
+    "- Be objective, avoid overstating certainty, and end with an explicit reminder that this is "
+    "decision support, not a diagnosis, and must be confirmed by a qualified clinician."
 )
 
 
@@ -99,8 +111,20 @@ def _fmt_dict(d):
     return "\n".join(f"  - {k.replace('_',' ')}: {v}" for k, v in (d or {}).items())
 
 
-def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=None):
-    """Generate an LLM clinical rationale from the prediction + biomarkers context."""
+def _strip_markdown(text):
+    """Remove Markdown emphasis/heading markers so the plain-text report has no stray ** or #."""
+    if not text:
+        return text
+    text = text.replace("**", "").replace("__", "")
+    return "\n".join(re.sub(r"^\s{0,3}#{1,6}\s+", "", ln) for ln in text.split("\n"))
+
+
+def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=None, literature=None):
+    """Generate an LLM clinical rationale from the prediction + biomarkers (+ retrieved literature).
+
+    ``literature`` is an optional pre-formatted, numbered block of paper excerpts from the RAG
+    retriever; when present the model grounds its literature claims in it and cites them [n].
+    """
     per_class = prediction.get("per_class", {})
     context = f"""MODEL PREDICTION (VGG-19 classifier):
   - Predicted class: {prediction.get('prediction')}
@@ -111,11 +135,13 @@ def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=Non
 GRAD-CAM++ EXPLAINABILITY:
   {gradcam_summary or 'Heatmap generated over the last VGG-19 conv block (block5_conv4) highlighting the regions that most influenced the prediction.'}
 
-FSL BIOMARKERS:
+FSL BIOMARKERS (from a single 2D slice expanded to a pseudo-volume — absolute volumes approximate):
 {_fmt_dict(biomarkers)}
 """
     if patient:
         context += "\nPATIENT CONTEXT:\n" + _fmt_dict(patient)
+    if literature:
+        context += "\nLITERATURE (cite as [n] when you use it):\n" + literature
 
     client = _get_client()
     if client is None:
@@ -128,11 +154,12 @@ FSL BIOMARKERS:
                 {"role": "system", "content": RATIONALE_SYSTEM},
                 {"role": "user", "content": context},
             ],
-            temperature=0.3,
+            temperature=0,  # deterministic, reproducible rationale
         )
-        return resp.choices[0].message.content
-    except Exception as exc:  # pragma: no cover
-        return f"(LLM rationale failed: {exc})\n\n" + _offline_rationale(prediction, biomarkers, context)
+        return _strip_markdown(resp.choices[0].message.content)
+    except Exception as exc:  # network / quota / rate-limit -> clean offline fallback (no raw error in UI)
+        print(f"[chatbot] rationale LLM unavailable ({exc}); using offline summary.")
+        return _offline_rationale(prediction, biomarkers, context)
 
 
 def _offline_rationale(prediction, biomarkers, context):
@@ -175,5 +202,6 @@ def answer(text, image_bytes=None, image_mime="image/png"):
             ],
         )
         return resp.choices[0].message.content
-    except Exception as exc:  # pragma: no cover - network/credentials
-        return f"(GPT-4 request failed: {exc})\n\n" + _offline_answer(text, image_bytes is not None)
+    except Exception as exc:  # network / quota / rate-limit -> clean offline reply (no raw error in UI)
+        print(f"[chatbot] chat LLM unavailable ({exc}); using offline assistant.")
+        return _offline_answer(text, image_bytes is not None)

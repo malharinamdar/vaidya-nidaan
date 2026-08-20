@@ -1,0 +1,113 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║  VAIDYA NIDAAN — INTERVIEW DEMO COMMAND SHEET                         ║
+║  Keep this file open in a tab during the interview.                  ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+WHAT THE SYSTEM IS (say this in one breath):
+  A 3-service Alzheimer's decision-support app:
+    React frontend (:5173)  ->  Node/Express + MongoDB gateway (:5005, auth + patients)
+                            ->  Python/Flask ML service (:5001)
+    ML service = VGG-19 classifier + Grad-CAM++ + FSL biomarkers
+                 + a RAG-grounded clinical rationale + a multilingual GPT-4o chatbot.
+
+
+──────────────────────────────────────────────────────────────────────
+0.  PRE-FLIGHT  (run ~10 min before the call, from the repo root)
+──────────────────────────────────────────────────────────────────────
+cd ~/vaidya-nidaan
+
+# free the ports in case something is already running:
+lsof -ti tcp:5001 tcp:5005 tcp:5173 | xargs kill -9 2>/dev/null
+
+# start all three services (leave this terminal open; Ctrl-C stops all):
+./start-all.sh
+
+
+──────────────────────────────────────────────────────────────────────
+1.  HEALTH CHECK  (proves the REAL components are live, no fallbacks)
+──────────────────────────────────────────────────────────────────────
+curl -s http://localhost:5001/health
+#  MUST show:  "classifier_backend":"tensorflow"   (NOT "numpy-fallback")
+#              "fsl_available":true ,  "openai_enabled":true
+curl -s http://localhost:5005/health
+
+
+──────────────────────────────────────────────────────────────────────
+2.  THE WEB DEMO  (main flow — open http://localhost:5173)
+──────────────────────────────────────────────────────────────────────
+  - Sign up as a doctor (name / email / password / specialty), or log in.
+  - Dashboard  ->  Add Patient  ->  fill details  ->  Submit
+  - Open the patient  ->  View Profile,  then show in this order:
+
+     1) Detect Alzheimer's   -> upload  docs/samples/axial_demented_sample.jpg
+                                        (=> Moderate Dementia)
+                             -> then    docs/samples/axial_nondemented_sample.jpg
+                                        (=> Non Demented)
+     2) Grad-CAM Analysis    -> same axial image (clean, brain-focused heatmap)
+     3) Biomarker Analysis   -> FSL BET + FAST tissue fractions (GM/WM/CSF, GM:WM)
+     4) Full Diagnosis Report-> prediction + Grad-CAM++ + biomarkers
+                                + RAG-grounded rationale citing [1][2]
+                                + section 5 "Retrieved Literature" with links
+     5) Chat with AI         -> ask in Hindi/Marathi to show multilingual
+
+  USE THESE IMAGES (bundled):
+     docs/samples/axial_demented_sample.jpg      <- positive case
+     docs/samples/axial_nondemented_sample.jpg   <- negative case
+  (Avoid MRI_blackandwhite.png for Grad-CAM — it's a sagittal full-head view,
+   the heatmap looks messier there; see the Q&A dossier for why.)
+
+
+──────────────────────────────────────────────────────────────────────
+3.  THE RAG  (shown INSIDE the UI — Diagnosis Report §5 "Retrieved Literature")
+──────────────────────────────────────────────────────────────────────
+# The RAG is NOT a separate terminal demo. It is already wired into the
+# Diagnosis Report page: prediction + biomarkers + Grad-CAM summary are grounded
+# in PubMed papers, the rationale cites [n], and §5 lists the papers with links.
+# >>> DEMO IT IN THE UI. <<<  The commands below are OPTIONAL headless checks only
+# (use only if an interviewer explicitly asks to see retrieval/refusal directly).
+
+cd ~/vaidya-nidaan
+
+# KB = 513 papers from PubMed/MEDLINE (NCBI E-utilities, MEDLINE-indexed + hasabstract).
+# In-domain retrieves at cosine ~0.3, off-topic at ~0.8, refusal floor sits at 0.75.
+
+# (a) grounded, CITED answer from the medical knowledge base:
+ml_service/.venv/bin/python ml_service/medical_rag.py "How does APOE4 affect Alzheimer's MRI biomarkers?"
+
+# (b) adjacent-dementia differential — ANSWERS it (KB now covers Lewy body / FTD / vascular):
+ml_service/.venv/bin/python ml_service/medical_rag.py "How does MRI help differentiate Lewy body dementia from Alzheimer's?"
+
+# (c) the GUARDRAIL — out-of-scope question is refused (not hallucinated):
+ml_service/.venv/bin/python ml_service/medical_rag.py "What is the capital of France?"
+
+# (d) the EVAL harness (retrieval relevance + citation + refusal => 9/9):
+ml_service/.venv/bin/python ml_service/eval_rag.py
+
+# (optional) rebuild the knowledge base from PubMed/MEDLINE (NCBI E-utilities):
+ml_service/.venv/bin/python ml_service/medical_rag.py --refresh
+
+
+──────────────────────────────────────────────────────────────────────
+4.  RAW API CALLS  (if they want to see the service directly, not the UI)
+──────────────────────────────────────────────────────────────────────
+S=docs/samples/axial_demented_sample.jpg
+curl -s -X POST http://localhost:5001/prediction -F "file=@$S"
+curl -s -X POST http://localhost:5001/report     -F "file=@$S"     # FSL biomarkers
+curl -s -X POST http://localhost:5001/chat       -F "text=What is the hippocampus?"
+curl -s -X POST http://localhost:5001/diagnosis  -F "file=@$S"     # full report JSON
+
+
+──────────────────────────────────────────────────────────────────────
+5.  TROUBLESHOOTING
+──────────────────────────────────────────────────────────────────────
+- /health shows "numpy-fallback"  -> model didn't load. Check that
+  ml_service/.env  ALZHEIMER_MODEL_PATH  points to
+  ml_service/models/alzheimer_model.h5 , then restart.
+- "Address already in use"         -> free ports (step 0), re-run ./start-all.sh
+- TensorFlow error mentioning protobuf ->
+  ml_service/.venv/bin/python -m pip install "protobuf==5.29.6"
+- FSL not found                    -> biomarker falls back to image-stats;
+  ensure ~/fsl exists (fsl_available:true in /health).
+- Data resets on restart           -> in-memory Mongo is ephemeral (expected).
+
+  (Rotate the OpenAI key + HF token in the two .env files before sharing the repo.)

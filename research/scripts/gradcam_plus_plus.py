@@ -20,19 +20,21 @@ def grad_cam_plus_plus(model, img_array, layer_name="block5_conv3"):
         loss = predictions[:, class_index]
 
     grads = tape.gradient(loss, conv_output)
-    first_derivative = grads
-    second_derivative = grads * grads
-    third_derivative = grads * grads * grads
+    # Work on the single-image maps (drop the batch axis) so the spatial reductions
+    # are over (H, W) per channel — the correct Grad-CAM++ formulation.
+    conv = conv_output[0]          # (H, W, C)
+    grad = grads[0]                # (H, W, C)
+    grad2 = grad * grad
+    grad3 = grad2 * grad
 
-    global_sum = tf.reduce_sum(conv_output, axis=(0, 1, 2))
-    alpha_num = second_derivative
-    alpha_denom = second_derivative * 2.0 + third_derivative * global_sum
+    global_sum = tf.reduce_sum(conv, axis=(0, 1))          # sum_{ab} A^k_{ab} -> (C,)
+    alpha_denom = 2.0 * grad2 + grad3 * global_sum
     alpha_denom = tf.where(alpha_denom != 0.0, alpha_denom, tf.ones_like(alpha_denom))
-    alphas = alpha_num / alpha_denom
-    alphas_normalized = alphas / tf.reduce_sum(alphas, axis=(0, 1))
+    alphas = grad2 / alpha_denom
+    alphas /= tf.reduce_sum(alphas, axis=(0, 1)) + 1e-10   # normalise per channel over (H, W)
 
-    weights = tf.reduce_sum(first_derivative * alphas_normalized, axis=(0, 1))
-    heatmap = tf.reduce_sum(weights * conv_output[0], axis=-1)
+    weights = tf.reduce_sum(alphas * tf.maximum(grad, 0.0), axis=(0, 1))   # relu(grad) -> (C,)
+    heatmap = tf.reduce_sum(weights * conv, axis=-1)       # (H, W)
     heatmap = tf.maximum(heatmap, 0)
     heatmap /= tf.reduce_max(heatmap) + 1e-10
 

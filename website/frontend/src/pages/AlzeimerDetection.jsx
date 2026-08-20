@@ -46,7 +46,8 @@ const AlzheimerDetectionPage = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to upload image.');
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'Failed to upload image.');
       }
 
       const data = await response.json();
@@ -123,17 +124,25 @@ const AlzheimerDetectionPage = () => {
             transition={{ duration: 1 }}
           >
             <h2 className="text-4xl font-semibold text-[#0A0A32]">Prediction Result</h2>
-            <div className="bg-[#f9f9f9] p-6 rounded-lg shadow-lg">
+            <div className="bg-[#f9f9f9] p-6 rounded-lg shadow-lg space-y-3 max-w-xl mx-auto">
               {prediction.prediction && (
-                <p className="text-xl text-[#0A0A32]">MRI: {prediction.prediction}</p>
-              )}
-              {prediction.alzheimer_probability !== undefined && (
-                <p className="text-xl text-[#0A0A32]">
-                  Alzheimer Probability: {prediction.alzheimer_probability.toFixed(2)}%
+                <p className="text-3xl font-bold text-center text-[#0A0A32]">
+                  {prediction.prediction}
                 </p>
               )}
+              {/* Binary classifier: show BOTH class probabilities (Non Demented + Demented). */}
+              {prediction.per_class &&
+                Object.entries(prediction.per_class).map(([cls, p]) => (
+                  <div key={cls} className="flex items-center gap-3">
+                    <span className="w-36 text-left text-sm">{cls}</span>
+                    <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
+                      <div className="bg-[#0A0A32] h-3" style={{ width: `${p}%` }} />
+                    </div>
+                    <span className="w-16 text-right text-sm">{p}%</span>
+                  </div>
+                ))}
               {prediction.message && (
-                <p className="text-xl text-[#0A0A32]">{prediction.message}</p>
+                <p className="text-sm text-gray-500 text-center pt-2">{prediction.message}</p>
               )}
             </div>
           </motion.section>

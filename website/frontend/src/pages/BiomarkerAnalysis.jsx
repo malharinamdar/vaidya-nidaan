@@ -38,7 +38,10 @@ function BiomarkerAnalysisPage() {
         body: formData,
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       });
-      if (!response.ok) throw new Error("Failed to generate biomarker report.");
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to generate biomarker report.");
+      }
       const data = await response.json();
       setResult(data);
     } catch (err) {

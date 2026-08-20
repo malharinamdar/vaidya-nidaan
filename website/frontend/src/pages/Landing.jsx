@@ -18,7 +18,7 @@ function LandingPage() {
           Welcome to <span className="text-[#0A0A32]">VaidyaNidaan</span>
         </h1> */}
         <p className="text-2xl text-[#0A0A32] opacity-80 max-w-4xl mx-auto">
-          Detect. Understand. Support. AI-powered diagnosis for Alzheimer's and Brain Tumors.
+          Detect. Understand. Support. AI-powered diagnosis for Alzheimer's.
         </p>
         
         <motion.div 
@@ -55,7 +55,7 @@ function LandingPage() {
       >
         <h2 className="text-5xl font-semibold">Why Choose Vaidya Nidaan?</h2>
         <p className="mt-6 text-xl opacity-80 max-w-4xl mx-auto">
-          Detect and monitor Alzheimer's and brain tumors with cutting-edge AI technology, easy-to-use interface, and multilingual support.
+          Detect and monitor Alzheimer's with cutting-edge AI technology, easy-to-use interface, and multilingual support.
         </p>
 
         <div className="mt-20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">

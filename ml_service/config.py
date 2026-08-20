@@ -9,13 +9,18 @@ try:
 except Exception:  # python-dotenv is optional
     pass
 
-# Class labels used by the Alzheimer classifier (order matters: index == label id).
-DEMENTIA_CLASSES = [
+# The saved model has a legacy Dense(4) head, but it was trained on BINARY data
+# (Non_Demented vs Demented): neurons 1 & 2 ("Very mild"/"Mild") never saw a training
+# example and are dead; only neuron 0 (Non Demented) and neuron 3 (Demented) carry signal.
+# These 4 names are the RAW neuron order, kept for reference only.
+RAW_MODEL_NEURONS = [
     "Non Demented",
     "Very mild Dementia",
     "Mild Dementia",
     "Moderate Dementia",
 ]
+# What the app actually reports: inference.classify() collapses the head to this binary decision.
+DEMENTIA_CLASSES = ["Non Demented", "Demented"]
 
 PORT = int(os.environ.get("PORT", "5001"))
 

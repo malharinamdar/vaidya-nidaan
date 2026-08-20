@@ -48,7 +48,8 @@ function GradCamAnalysisPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to process Grad-CAM analysis.");
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to process Grad-CAM analysis.");
       }
 
       const result = await response.json();

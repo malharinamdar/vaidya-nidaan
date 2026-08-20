@@ -176,7 +176,7 @@ function PatientProfile() {
           </div>
         )}
 
-        <h3 className="text-xl font-semibold text-gray-800 mt-6">Brain Tumor Detection</h3>
+        <h3 className="text-xl font-semibold text-gray-800 mt-6"></h3>
         {isEditing ? (
           <div>
             <label className="block text-gray-600">Scan Type:</label>

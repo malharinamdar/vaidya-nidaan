@@ -16,6 +16,10 @@ website/frontend/dist/
 # Model cache / downloads
 ml_service/models/
 .cache/
+/*.h5                         # stray model files at repo root (>100MB, breaks git)
+
+# RAG vector store (regenerable: python ml_service/medical_rag.py --build)
+ml_service/rag_store/chroma_db/
 
 # FSL / ML scratch outputs
 *.nii.gz
