@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════════╗
-║  VAIDYA NIDAAN — INTERVIEW DEMO COMMAND SHEET                         ║
+║  VAIDYA NIDAAN — COMMAND SHEET                         ║
 ║  Keep this file open in a tab during the interview.                  ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
@@ -40,7 +40,7 @@ curl -s http://localhost:5005/health
   - Open the patient  ->  View Profile,  then show in this order:
 
      1) Detect Alzheimer's   -> upload  docs/samples/axial_demented_sample.jpg
-                                        (=> Moderate Dementia)
+                                        (=> Dementia)
                              -> then    docs/samples/axial_nondemented_sample.jpg
                                         (=> Non Demented)
      2) Grad-CAM Analysis    -> same axial image (clean, brain-focused heatmap)
@@ -53,8 +53,7 @@ curl -s http://localhost:5005/health
   USE THESE IMAGES (bundled):
      docs/samples/axial_demented_sample.jpg      <- positive case
      docs/samples/axial_nondemented_sample.jpg   <- negative case
-  (Avoid MRI_blackandwhite.png for Grad-CAM — it's a sagittal full-head view,
-   the heatmap looks messier there; see the Q&A dossier for why.)
+  (Avoid MRI_blackandwhite.png for Grad-CAM — it's a sagittal full-head view; see the Q&A dossier for why.)
 
 
 ──────────────────────────────────────────────────────────────────────
