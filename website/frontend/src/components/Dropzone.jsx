@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuImagePlus, LuRotateCcw, LuScanLine, LuX } from "react-icons/lu";
+import { LuCircleCheck, LuImagePlus, LuLoaderCircle, LuRotateCcw, LuScanLine, LuTriangleAlert, LuX } from "react-icons/lu";
 import { SAMPLE_SCANS, loadSample } from "../lib/scan";
 import { formatBytes } from "../lib/format";
 import { cx } from "./ui";
@@ -16,6 +16,43 @@ function validate(file, allowVolumes) {
   return allowVolumes
     ? "Upload a PNG/JPG MRI slice or a NIfTI volume (.nii, .nii.gz)."
     : "Upload a PNG or JPG brain-MRI slice.";
+}
+
+/** Result of the server-side MRI check for the active scan. */
+function ValidationStrip({ validation }) {
+  if (!validation || validation.status === "unknown") return null;
+  const s = validation.status;
+  if (s === "checking") {
+    return (
+      <p className="flex items-center gap-2 border-t border-ink-100 px-4 py-2.5 text-[12.5px] text-ink-500">
+        <LuLoaderCircle className="h-3.5 w-3.5 animate-spin" /> Checking the image is a brain MRI…
+      </p>
+    );
+  }
+  if (s === "not_mri") {
+    return (
+      <div className="flex gap-2.5 border-t border-rose-200 bg-rose-50 px-4 py-3 text-[12.5px] text-rose-800">
+        <LuTriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <div>
+          <p className="font-semibold">Not a brain MRI scan</p>
+          <p className="mt-0.5 text-rose-700">{validation.message || "Upload an axial T1-weighted MRI slice."}</p>
+        </div>
+      </div>
+    );
+  }
+  if (s === "atypical") {
+    return (
+      <div className="flex gap-2.5 border-t border-amber-200 bg-amber-50 px-4 py-2.5 text-[12.5px] text-amber-900">
+        <LuTriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <p>{validation.message}</p>
+      </div>
+    );
+  }
+  return (
+    <p className="flex items-center gap-2 border-t border-ink-100 px-4 py-2 text-[12.5px] text-brand-700">
+      <LuCircleCheck className="h-3.5 w-3.5" /> {validation.message || "Brain MRI slice"}
+    </p>
+  );
 }
 
 /**
@@ -101,6 +138,7 @@ export default function Dropzone({ scan, onFile, onClear, allowVolumes = false, 
             }}
           />
         </div>
+        <ValidationStrip validation={scan.validation} />
         {error && <p className="border-t border-ink-100 px-4 py-2 text-[12.5px] text-rose-600">{error}</p>}
       </div>
     );
@@ -153,6 +191,7 @@ export default function Dropzone({ scan, onFile, onClear, allowVolumes = false, 
             key={s.path}
             onClick={() => pickSample(s)}
             disabled={!!loadingSample}
+            title={s.title}
             className="inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white py-1 pr-3 pl-1 text-[12.5px] font-medium text-ink-700 transition hover:border-brand-300 hover:text-ink-900 disabled:opacity-60"
           >
             <img src={s.path} alt="" className="h-6 w-6 rounded-full bg-black object-cover" />

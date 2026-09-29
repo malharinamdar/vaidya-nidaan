@@ -3,7 +3,7 @@ import { LuChevronDown } from "react-icons/lu";
 import { Analysing, BiomarkerTable, TissueComposition } from "../../components/results";
 import { ml } from "../../lib/api";
 import { cx } from "../../components/ui";
-import { ErrorBox, NeedScan, RunButton, TabHeader, useRun } from "./common";
+import { ErrorBox, NeedScan, RunButton, TabHeader, useRun, isNotMRI } from "./common";
 
 export default function BiomarkersTab({ scan, setResult }) {
   const { result, loading, error, run } = useRun(scan, setResult, "biomarkers", (file) => ml("/report", { file }));
@@ -13,11 +13,11 @@ export default function BiomarkersTab({ scan, setResult }) {
       <TabHeader
         title="Tissue biomarkers"
         description="FSL BET extracts the brain, then FAST segments it into CSF, grey matter and white matter."
-        action={scan && <RunButton onClick={run} loading={loading} hasResult={!!result} label="Run FSL analysis" />}
+        action={scan && !isNotMRI(scan) && <RunButton onClick={run} loading={loading} hasResult={!!result} label="Run FSL analysis" />}
       />
       <ErrorBox error={error} onRetry={run} />
-      {!scan ? (
-        <NeedScan />
+      {!scan || isNotMRI(scan) ? (
+        <NeedScan notMRI={isNotMRI(scan)} />
       ) : loading ? (
         <Analysing image={scan.url} steps={["Converting the upload to NIfTI", "BET brain extraction", "FAST 3-class tissue segmentation", "Partial-volume weighted fractions"]} />
       ) : result ? (

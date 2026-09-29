@@ -11,8 +11,8 @@ requests>=2.31
 python-dotenv>=1.0
 
 # --- Real Alzheimer model (VGG-19) + Grad-CAM++ ------------------------------
-tensorflow==2.19.0          # loads alzheimer_model.h5 and runs Grad-CAM++
-keras==3.14.1               # the version the saved model was verified with
+tensorflow==2.19.0          # same TF version the v2 model was trained with
+keras==3.14.1               # loads the v2 .keras model (verified on Modal)
 protobuf==5.29.6            # pin: chromadb pulls protobuf 7, which breaks TF 2.19
 huggingface_hub>=0.24       # downloads the trained model from the private HF repo
 

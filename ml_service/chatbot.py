@@ -6,9 +6,13 @@ same Chroma store as the report (``medical_rag.py``), cited as [n]. Otherwise an
 offline, rule-based assistant answers locally so the chat works without any key.
 """
 import base64
+import json
+import os
 import re
 
-from config import OPENAI_API_KEY, OPENAI_MODEL
+from config import MODEL_EVAL_SUMMARY, OPENAI_API_KEY, OPENAI_MODEL
+
+VERIFIER_MODEL = os.environ.get("OPENAI_VERIFIER_MODEL", "gpt-4o-mini")
 
 SYSTEM_PROMPT = (
     "You are Vaidya Nidaan, a multilingual medical-imaging assistant that supports a "
@@ -92,8 +96,9 @@ RATIONALE_SYSTEM = (
     "Format: plain text, no Markdown symbols (no asterisks, underscores or #). Put each heading on its own line, "
     "then short paragraphs or '- ' bullet points. Use exactly these headings:\n"
     "Clinical impression -- 2-3 sentences integrating everything into one overall picture and how much weight it deserves.\n"
-    "Classifier interpretation -- what the probability and its margin from the 50% threshold mean, and how "
-    "much it should move the clinician's estimate given it is a single-slice model trained on OASIS-1.\n"
+    "Classifier interpretation -- what the probability and its margin from the decision threshold given in the input "
+    "mean, and how much it should move the clinician's estimate given the reported test sensitivity/specificity and "
+    "that it scores a single slice.\n"
     "Explainability -- interpret the Grad-CAM++ pattern (focal vs diffuse, share within the head, peak location in "
     "image coordinates); explain what a clinically meaningful attribution would look like (medial temporal lobes, "
     "hippocampi, ventricles, cortical sulci) and what the clinician should check when viewing the overlay.\n"
@@ -137,6 +142,73 @@ def _strip_markdown(text):
     return "\n".join(re.sub(r"^\s{0,3}#{1,6}\s+", "", ln) for ln in text.split("\n"))
 
 
+# --- Citation verification ---------------------------------------------------------------
+# A second, cheap model checks every sentence that cites a retrieved paper against that
+# paper's abstract; citations the abstract does not support are removed from the text.
+_CITE_GROUP = re.compile(r"\[(\d+(?:\s*[,\u2013-]\s*\d+)*)\]")
+VERIFY_SYSTEM = (
+    "You check citations. For each claim, decide for every cited source number whether that source's abstract "
+    "supports the claim -- i.e. states it or clearly implies it. Background clinical knowledge does not count; "
+    "only the abstract. Reply with JSON: {\"results\": [{\"id\": <claim id>, \"unsupported\": [<source numbers>]}]}."
+)
+
+
+def _expand(group):
+    nums = []
+    for part in re.split(r"\s*,\s*", group):
+        if re.fullmatch(r"\d+\s*[\u2013-]\s*\d+", part):
+            a, b = (int(x) for x in re.split(r"\s*[\u2013-]\s*", part))
+            nums += list(range(a, b + 1))
+        elif part.strip().isdigit():
+            nums.append(int(part))
+    return nums
+
+
+def verify_citations(text, abstracts):
+    """Drop citations the cited abstract does not support.
+
+    ``abstracts``: list of (title, abstract) for sources [1..n]. Returns (text, stats) where
+    stats = {"checked": citations checked, "supported": kept, "removed": dropped}. Fails open.
+    """
+    client = _get_client()
+    claims = []
+    for line in (text or "").split("\n"):
+        for sent in re.split(r"(?<=[.!?])\s+", line):
+            if _CITE_GROUP.search(sent):
+                claims.append(sent)
+    if client is None or not claims or not abstracts:
+        return text, {"checked": 0, "supported": 0, "removed": 0}
+    sources = "\n\n".join(f"[{i + 1}] {t}\n{a[:1500]}" for i, (t, a) in enumerate(abstracts))
+    items = "\n".join(f"{i}. {c}" for i, c in enumerate(claims))
+    try:
+        resp = client.chat.completions.create(
+            model=VERIFIER_MODEL,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": VERIFY_SYSTEM},
+                      {"role": "user", "content": f"SOURCES:\n{sources}\n\nCLAIMS:\n{items}"}],
+        )
+        results = json.loads(resp.choices[0].message.content).get("results", [])
+    except Exception as exc:
+        print(f"[chatbot] citation check unavailable ({exc})")
+        return text, {"checked": 0, "supported": 0, "removed": 0}
+
+    bad = {int(r.get("id", -1)): {int(n) for n in r.get("unsupported", []) if str(n).isdigit()} for r in results}
+    checked = removed = 0
+    for i, claim in enumerate(claims):
+        def fix(m, drop=bad.get(i, set())):
+            nonlocal checked, removed
+            nums = _expand(m.group(1))
+            keep = [n for n in nums if n not in drop and 1 <= n <= len(abstracts)]
+            checked += len(nums)
+            removed += len(nums) - len(keep)
+            return f"[{', '.join(map(str, keep))}]" if keep else ""
+        fixed = _CITE_GROUP.sub(fix, claim)
+        fixed = re.sub(r"\s+([.,;:])", r"\1", fixed).replace("  ", " ")
+        text = text.replace(claim, fixed, 1)
+    return text, {"checked": checked, "supported": checked - removed, "removed": removed}
+
+
 def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=None, literature=None,
                        native_volume=False):
     """Generate an LLM clinical rationale from the prediction + biomarkers (+ retrieved literature).
@@ -151,8 +223,10 @@ def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=Non
     context = f"""MODEL PREDICTION (VGG-19 classifier):
   - Predicted class: {prediction.get('prediction')}
   - Probability of dementia (1 - P[Non Demented]): {prediction.get('alzheimer_probability')}%
+  - Decision threshold: Demented when P(Demented) >= {prediction.get('threshold', 50)}% (tuned on validation patients; P(Demented) is a model score, not a calibrated probability of disease)
   - Per-class probabilities:
 {_fmt_dict(per_class)}
+  - Test performance: {MODEL_EVAL_SUMMARY}
 
 GRAD-CAM++ EXPLAINABILITY:
   {gradcam_summary or 'Heatmap generated over the last VGG-19 conv block (block5_conv4) highlighting the regions that most influenced the prediction.'}
@@ -289,11 +363,14 @@ def answer(text, image_bytes=None, image_mime="image/png", history=None, context
         print(f"[chatbot] chat LLM unavailable ({exc}); using offline assistant.")
         return {"message": _offline_answer(text, image_bytes is not None), "sources": [], "offline": True}
 
+    check = {"checked": 0, "supported": 0, "removed": 0}
+    if hits:
+        reply, check = verify_citations(reply, [(h["title"], h["abstract"]) for h in hits])
     cited = set()
     for group in re.findall(r"\[([\d,\s\u2013-]+)\]", reply):  # [1], [2, 3], [4-5]
-        cited.update(int(p) for p in re.split(r"[,\s\u2013-]+", group) if p.isdigit())
+        cited.update(_expand(group))
     sources = [
         {"n": i + 1, "title": h["title"], "year": h["year"], "url": h.get("url", "")}
         for i, h in enumerate(hits) if (i + 1) in cited
     ]
-    return {"message": reply, "sources": sources}
+    return {"message": reply, "sources": sources, "citation_check": check}

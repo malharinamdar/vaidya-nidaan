@@ -34,7 +34,7 @@ function patientContext(patient, results) {
   if (patient.notes) lines.push(`Clinical notes: ${patient.notes}`);
   if (patient.latestResult?.label)
     lines.push(`Latest saved report: ${patient.latestResult.label}, model P(Demented) ${patient.latestResult.probability}% (${formatDate(patient.latestResult.analyzedAt)}).`);
-  if (results?.classify) lines.push(`Current scan classification: ${results.classify.prediction} (P(Demented) ${results.classify.alzheimer_probability}%).`);
+  if (results?.classify) lines.push(`Current scan classification: ${results.classify.prediction} (P(Demented) ${results.classify.alzheimer_probability}%; Demented at >= ${results.classify.threshold ?? 50}%).`);
   if (results?.biomarkers?.biomarkers) {
     const b = results.biomarkers.biomarkers;
     lines.push(`Current scan single-slice tissue composition: CSF ${b.csf_fraction_pct}%, GM ${b.grey_matter_fraction_pct}%, WM ${b.white_matter_fraction_pct}%, GM:WM ${b.gm_wm_ratio}.`);
@@ -162,7 +162,14 @@ export default function PatientWorkspace() {
           <Card className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-[14px] font-semibold text-ink-900">MRI scan</p>
-              {scan && <Badge tone="brand" dot>Ready</Badge>}
+              {scan &&
+                (scan.validation?.status === "not_mri" ? (
+                  <Badge tone="danger" dot>Not an MRI</Badge>
+                ) : scan.validation?.status === "checking" ? (
+                  <Badge tone="neutral" dot>Checking</Badge>
+                ) : (
+                  <Badge tone="brand" dot>Ready</Badge>
+                ))}
             </div>
             <Dropzone scan={scan} onFile={setFile} onClear={clear} allowVolumes compact />
             <p className="mt-3 text-[12px] leading-relaxed text-ink-500">
@@ -173,7 +180,7 @@ export default function PatientWorkspace() {
               variant="brand"
               icon={LuSparkles}
               className="mt-4 w-full rounded-full"
-              disabled={!scan}
+              disabled={!scan || ["not_mri", "checking"].includes(scan.validation?.status)}
               onClick={() => go("report")}
             >
               Generate full report

@@ -7,7 +7,7 @@ This guide brings up the full system: **React frontend → Node API gateway → 
 React (Vite, :5173)
    ├── auth + patients + saved reports ─────▶  Node/Express + MongoDB Atlas (:5005)
    └── prediction / grad‑cam / report / chat ▶ Python Flask ML service (:5001)
-                                                 ├─ TensorFlow VGG‑19 (Hugging Face)
+                                                 ├─ TensorFlow VGG‑19 (v2 weights)
                                                  ├─ Grad‑CAM++
                                                  ├─ FSL biomarker analysis (BET + FAST)
                                                  └─ OpenAI GPT‑4o (multilingual chat + rationale)
@@ -24,7 +24,7 @@ Two `.env` files are already created from the `.env.example` templates and conta
 defaults plus your keys:
 
 - `website/backend/.env` — `PORT=5005`, `JWT_SECRET`, `MONGO_URI` (empty ⇒ in‑memory Mongo), `MONGO_DB_NAME`, `CORS_ORIGINS`, `DEMO_MODE`
-- `ml_service/.env` — `PORT=5001`, `ALZHEIMER_MODEL_PATH` (or `HF_TOKEN`), `OPENAI_API_KEY`, and the **same `JWT_SECRET`** as the backend
+- `ml_service/.env` — `PORT=5001`, `ALZHEIMER_MODEL_PATH`, `MODEL_PREPROCESS`, `DECISION_THRESHOLD`, `OPENAI_API_KEY`, and the **same `JWT_SECRET`** as the backend
 
 With `JWT_SECRET` set, every ML route needs the `Authorization: Bearer <token>` the API issues at login.
 After setting `MONGO_URI`, run `npm run init-db` in `website/backend` once (indexes + demo workspace).
@@ -73,28 +73,21 @@ curl http://localhost:5005/health
 curl http://localhost:5001/health   # classifier_backend, fsl_available, openai_enabled, auth_required
 ```
 
-## Using the real trained model (Hugging Face)
-The ML service downloads `alzheimer_model.h5` from the private repo
-`malharinamdar/alzheimer-prediction-model` on first prediction and caches it under
-`ml_service/models/`. It then runs the **real VGG‑19 classifier + Grad‑CAM++**.
-
-There is no heuristic fallback: if the model can't be loaded, prediction requests fail loudly
-instead of inventing a diagnosis. Point `ALZHEIMER_MODEL_PATH` at a local copy of the `.h5` to
-skip the download entirely.
-
-### Hugging Face token
-`HF_TOKEN` must have **Read** access to the model repo. Create/edit a token at
-https://huggingface.co/settings/tokens (fine‑grained: grant *Read access to contents of
-repos in your namespace*, or use a classic read token), then set it in `ml_service/.env`:
+## The trained model
+The service runs the v2 VGG-19 classifier trained in `research/notebooks/alzheimer_model_v2.ipynb`.
+Put the weights at `ml_service/models/alzheimer_vgg19_v2.keras` and keep these in `ml_service/.env`
+(they are also the defaults in `.env.example`):
 ```
-HF_TOKEN=hf_your_read_token
+ALZHEIMER_MODEL_PATH=models/alzheimer_vgg19_v2.keras
+MODEL_PREPROCESS=vgg19        # Keras ImageNet preprocess_input, as in training
+DECISION_THRESHOLD=0.13       # slice-level threshold tuned on the validation patients
 ```
+There is no heuristic fallback: if the model can't be loaded, prediction requests fail
+instead of inventing a diagnosis.
 
-### Model preprocessing
-`MODEL_PREPROCESS` in `ml_service/.env` controls pixel scaling (`auto`, `div255`, `raw`, `vgg19`).
-It defaults to **`raw`** (0–255 pixels), matching how this VGG‑19 model was trained in
-`research/notebooks/final_alzheimer_model.ipynb`. `auto` probes the bundled sample MRI and picks
-the most confident mode if you are unsure.
+The legacy v1 model (`alzheimer_model.h5`, private Hugging Face repo
+`malharinamdar/alzheimer-prediction-model`) is still loadable: leave `ALZHEIMER_MODEL_PATH` blank,
+set `HF_TOKEN`, `MODEL_PREPROCESS=raw` and `DECISION_THRESHOLD=0.5`.
 
 ## Endpoint reference (ML service, :5001)
 | Method | Path | Body | Returns |

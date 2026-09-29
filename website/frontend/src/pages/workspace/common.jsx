@@ -5,6 +5,8 @@ import { ResultPlaceholder } from "../../components/results";
 
 const VOLUME_RE = /\.(nii|nii\.gz|img|hdr)$/i;
 export const isVolume = (scan) => !!scan && VOLUME_RE.test(scan.name);
+export const isNotMRI = (scan) => scan?.validation?.status === "not_mri";
+export const isChecking = (scan) => scan?.validation?.status === "checking";
 
 /** Run an ML call against the current scan and cache its result on the scan. */
 export function useRun(scan, setResult, key, fn) {
@@ -46,7 +48,14 @@ export function RunButton({ onClick, loading, hasResult, label }) {
   );
 }
 
-export function NeedScan({ volumeNotSupported }) {
+export function NeedScan({ volumeNotSupported, notMRI }) {
+  if (notMRI) {
+    return (
+      <ResultPlaceholder icon={LuImagePlus} title="This file isn't a brain MRI scan">
+        Analyses only run on brain MRI. Replace it in the scan panel with an axial T1-weighted slice (PNG/JPG) or a NIfTI volume.
+      </ResultPlaceholder>
+    );
+  }
   return (
     <ResultPlaceholder icon={LuImagePlus} title={volumeNotSupported ? "This tool needs a 2D slice" : "Upload a scan to begin"}>
       {volumeNotSupported

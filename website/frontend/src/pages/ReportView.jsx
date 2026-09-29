@@ -151,7 +151,7 @@ export default function ReportView() {
 
             {/* Impression */}
             <div className="avoid-break mt-8">
-              <VerdictCard label={pred.label} probability={pred.probability} size="lg" />
+              <VerdictCard label={pred.label} probability={pred.probability} threshold={pred.threshold ?? 50} size="lg" />
             </div>
 
             <div className="mt-10 space-y-10">
@@ -165,7 +165,7 @@ export default function ReportView() {
                     </div>
                     <div>
                       <dt className="text-ink-500">Threshold</dt>
-                      <dd className="mt-0.5 font-medium text-ink-900">P(Demented) ≥ 50%</dd>
+                      <dd className="mt-0.5 font-medium text-ink-900">P(Demented) ≥ {pred.threshold ?? 50}%</dd>
                     </div>
                     <div>
                       <dt className="text-ink-500">Input</dt>
@@ -204,6 +204,11 @@ export default function ReportView() {
 
               {report.literature?.length > 0 && (
                 <Section n={5} title="Related literature" note="Retrieved from PubMed/MEDLINE">
+                  {report.citationCheck?.checked > 0 && (
+                    <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-[12px] font-medium text-brand-800 ring-1 ring-brand-200">
+                      ✓ {report.citationCheck.supported} of {report.citationCheck.checked} citations verified against the source abstracts
+                    </p>
+                  )}
                   <References items={report.literature} />
                 </Section>
               )}

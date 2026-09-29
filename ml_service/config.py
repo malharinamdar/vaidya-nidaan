@@ -9,17 +9,8 @@ try:
 except Exception:  # python-dotenv is optional
     pass
 
-# The saved model has a legacy Dense(4) head, but it was trained on BINARY data
-# (Non_Demented vs Demented): neurons 1 & 2 ("Very mild"/"Mild") never saw a training
-# example and are dead; only neuron 0 (Non Demented) and neuron 3 (Demented) carry signal.
-# These 4 names are the RAW neuron order, kept for reference only.
-RAW_MODEL_NEURONS = [
-    "Non Demented",
-    "Very mild Dementia",
-    "Mild Dementia",
-    "Moderate Dementia",
-]
-# What the app actually reports: inference.classify() collapses the head to this binary decision.
+# Binary task: Non Demented vs Demented. The v2 model has a 2-way softmax head; the legacy v1
+# model's 4-wide head is collapsed to the same decision in inference.classify().
 DEMENTIA_CLASSES = ["Non Demented", "Demented"]
 
 PORT = int(os.environ.get("PORT", "5001"))
@@ -33,11 +24,25 @@ ALZHEIMER_MODEL_REPO = os.environ.get(
 ALZHEIMER_MODEL_FILE = os.environ.get("ALZHEIMER_MODEL_FILE", "alzheimer_model.h5").strip()
 HF_TOKEN = os.environ.get("HF_TOKEN", "").strip() or os.environ.get("HUGGINGFACE_TOKEN", "").strip()
 GRADCAM_LAYER = os.environ.get("GRADCAM_LAYER", "").strip()
-# How to scale pixels before the model: "div255" (0..1), "raw" (0..255), or "vgg19"
-# (Keras imagenet preprocess). "auto" probes the model on a synthetic input.
+# How to scale pixels before the model: "vgg19" (Keras ImageNet preprocess_input -- the v2 model),
+# "raw" (0..255 -- the v1 model) or "div255" (0..1). "auto" probes the model on a sample slice.
 MODEL_PREPROCESS = os.environ.get("MODEL_PREPROCESS", "auto").strip().lower()
 
 MODEL_CACHE_DIR = os.path.join(os.path.dirname(__file__), "models")
+
+# P(Demented) at or above which a slice is labelled Demented (0-1). The v2 model uses 0.13, the
+# slice-level threshold that maximised balanced accuracy on the validation patients
+# (research/results/v2/metrics.json); 0.5 is plain argmax.
+DECISION_THRESHOLD = float(os.environ.get("DECISION_THRESHOLD", "0.5"))
+
+# Held-out test performance of the deployed v2 model (research/results/v2/metrics.json). Passed to
+# the rationale so it can weigh a single-slice score like any other test result.
+MODEL_EVAL_SUMMARY = (
+    "52 held-out OASIS-1 patients (no overlap with training). Per slice, at this threshold: "
+    "sensitivity 89%, specificity 67%, ROC-AUC 0.85; positive likelihood ratio 2.7, negative likelihood "
+    "ratio 0.16, so a Non Demented call shifts the odds more than a Demented call. "
+    "Per patient (all slices averaged): ROC-AUC 0.89."
+)
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4-turbo").strip()
@@ -49,8 +54,12 @@ def resolve_model_path():
     Priority: explicit ALZHEIMER_MODEL_PATH -> download from Hugging Face repo.
     The HF download is cached under ml_service/models, so it only happens once.
     """
-    if ALZHEIMER_MODEL_PATH and os.path.exists(ALZHEIMER_MODEL_PATH):
-        return ALZHEIMER_MODEL_PATH
+    if ALZHEIMER_MODEL_PATH:
+        path = ALZHEIMER_MODEL_PATH
+        if not os.path.isabs(path):  # relative paths are relative to ml_service/
+            path = os.path.join(os.path.dirname(__file__), path)
+        if os.path.exists(path):
+            return path
     if not ALZHEIMER_MODEL_REPO or not ALZHEIMER_MODEL_FILE:
         return None
     try:

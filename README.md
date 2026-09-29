@@ -30,22 +30,33 @@ Marathi, …) answers follow-up questions with PubMed citations; conversations a
 
 | Layer | What it does |
 |---|---|
-| **Classifier** | VGG-19 (ImageNet transfer learning) + dense head (256 → 128 → softmax) on 128 × 128 axial slices; binary decision, Demented vs Non-demented. |
+| **Classifier** | VGG-19 (ImageNet, last block fine-tuned) + dense head (256 → 128 → softmax) on 128 × 128 axial slices; binary decision, Demented vs Non-demented, at a threshold tuned on validation patients. |
 | **Explainability** | Grad-CAM++ on `block5_conv4`, computed on the pre-softmax **log-odds** of the predicted class (softmax gradients vanish on confident predictions), rendered as an adjustable overlay. |
 | **Tissue biomarkers** | FSL BET + FAST (3-class, T1) with partial-volume-weighted tissue amounts: CSF / grey / white-matter fractions, GM:WM ratio and parenchymal fraction for 2D slices, plus volumes for 3D NIfTI uploads. |
 | **RAG** | 513 PubMed/MEDLINE abstracts (NCBI E-utilities) in a persisted ChromaDB index with cosine retrieval and an out-of-domain refusal floor, used by both the report rationale and the assistant. `eval_rag.py` checks retrieval relevance, citation and refusal (9/9). |
 | **Clinical rationale** | GPT-4o writes a structured interpretation — impression, classifier and Grad-CAM++ interpretation, tissue biomarkers vs Alzheimer's atrophy patterns, risk profile, a synthesis of 5 retrieved PubMed abstracts with [n] citations, differential diagnosis and recommended work-up. |
 | **Assistant** | GPT-4o chat with conversation memory, image attachments and PubMed grounding; conversations are stored in MongoDB per patient. |
 | **Caching** | Deterministic outputs (classification, Grad-CAM++, FSL, full report, repeated questions) are cached by input hash — Redis when `REDIS_URL` is set, else in-process. A repeat request drops from ~4 s to a few ms. |
-| **Input guard** | A deterministic plausibility filter (greyscale, dark background, tissue present) rejects photos and screenshots before the model runs. |
+| **Input check** | Two stages before any analysis: pixel heuristics, then a Mahalanobis out-of-distribution test on VGG-19 `block4_pool` features fitted to OASIS slices (`build_ood_stats.py`). Screenshots, photos and documents are rejected in the UI as "not a brain MRI". |
+| **Citation verification** | A second pass (`gpt-4o-mini`) checks every cited sentence in the rationale and assistant replies against the cited abstract and removes unsupported citations. |
 
 ### Data and training
 
-- **Data:** OASIS-1 cross-sectional MRI — axial T1 slices from 347 subjects (81 with CDR ≥ 0.5, 266 with CDR 0).
-- **Notebooks:** [`final_alzheimer_model.ipynb`](research/notebooks/final_alzheimer_model.ipynb) trains the current model;
-  [`alzheimer_model_v2.ipynb`](research/notebooks/alzheimer_model_v2.ipynb) is the v2 pipeline — patient-level train/val/test split,
-  class weights over the full 86k-slice imagesOASIS set, ImageNet preprocessing, block5 fine-tuning with augmentation, and
-  slice- plus patient-level evaluation. [`report.ipynb`](research/notebooks/report.ipynb) prototypes the FSL biomarker report.
+- **Data:** OASIS-1 cross-sectional MRI ([imagesOASIS](https://www.kaggle.com/datasets/ninadaithal/imagesoasis)): 86,437 axial T1 slices from 347 subjects, 81 demented (CDR ≥ 0.5) and 266 non-demented.
+- **Split:** by patient, stratified by diagnosis: 243 train / 52 validation / 52 test subjects, so no brain appears in more than one split.
+- **Training:** [`alzheimer_model_v2.ipynb`](research/notebooks/alzheimer_model_v2.ipynb): ImageNet preprocessing, a 4-epoch head warm-up, then block5 fine-tuning with early stopping; class-weighted loss for the 3.5 : 1 imbalance; flip / rotation / zoom / contrast augmentation.
+- **Threshold:** a slice is called Demented at P(Demented) ≥ 0.13, the cut-off that maximised balanced accuracy on the validation patients (0.32 when a patient's slices are averaged).
+
+**Test results** (52 held-out patients, [`research/results/v2`](research/results/v2)):
+
+| | Per slice (12,444 slices) | Per patient (slices averaged) |
+|---|---|---|
+| ROC-AUC | 0.85 | 0.89 (95% CI 0.79–0.97) |
+| Balanced accuracy | 0.78 | 0.78 (0.64–0.90) |
+| Sensitivity | 0.89 | 0.83 |
+| Specificity | 0.67 | 0.73 |
+
+Confidence intervals: 1,000 bootstrap resamples of the test patients. For reference, the same frozen-feature head reaches 95.5% accuracy on a random slice-level split and 74.8% on the patient split. With a random split, slices of the same brain land in both train and test, which is how the earlier v1 model ([`final_alzheimer_model.ipynb`](research/notebooks/final_alzheimer_model.ipynb)) was evaluated. [`report.ipynb`](research/notebooks/report.ipynb) prototypes the FSL biomarker report.
 
 ---
 
@@ -87,7 +98,7 @@ cd ../frontend && npm install
 
 # ML service
 cd ../../ml_service && python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-cp .env.example .env   # set ALZHEIMER_MODEL_PATH (or HF_TOKEN), OPENAI_API_KEY, and the SAME JWT_SECRET
+cp .env.example .env   # set OPENAI_API_KEY and the SAME JWT_SECRET; weights go in models/ (from the v2 notebook)
 
 cd .. && ./start-all.sh   # frontend :5173 · API :5005 · ML :5001
 ```
@@ -101,7 +112,7 @@ website/frontend   React SPA (pages/, components/, lib/)
 website/backend    Express API (app.js, routes/, models/, lib/, api/index.js for Vercel)
 ml_service         Flask ML service (app.py, inference.py, report.py, diagnosis.py,
                    chatbot.py, medical_rag.py, security.py, mri_check.py, modal_app.py)
-research           Training notebooks (v1, v2), FSL report notebook, Grad-CAM++ and FSL scripts
+research           Training notebooks (v1, v2), v2 test results, FSL report notebook, Grad-CAM++ and FSL scripts
 docs               Screenshots, sample scans, architecture diagrams
 ```
 

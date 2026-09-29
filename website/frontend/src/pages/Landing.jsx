@@ -114,16 +114,16 @@ function ProductMockup() {
           <div className="p-5 sm:p-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="label-eyebrow">Diagnosis report · OASIS-1 sample</p>
+                <p className="label-eyebrow">Diagnosis report · OASIS-1 test patient</p>
                 <p className="mt-1 font-display text-[30px] leading-none text-ink-900">Sunita Rao, 74</p>
               </div>
-              <span className="rounded-full bg-rose-50 px-3 py-1 text-[12px] font-medium text-rose-700 ring-1 ring-rose-200">Dementia pattern · 100.0%</span>
+              <span className="rounded-full bg-rose-50 px-3 py-1 text-[12px] font-medium text-rose-700 ring-1 ring-rose-200">Dementia pattern · 78.4%</span>
             </div>
             <div className="mt-5 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
               <div className="relative flex aspect-[2/1] items-center justify-center overflow-hidden rounded-xl bg-ink-950">
                 <div className="relative h-full">
-                  <img src="/hero/mri.png" alt="Axial MRI slice from the OASIS-1 dataset" className="h-full w-auto object-contain" />
-                  <img src="/hero/heatmap.png" alt="" className="absolute inset-0 h-full w-full object-contain opacity-75 mix-blend-screen" />
+                  <img src="/hero/mri_v2.png" alt="Axial MRI slice from the OASIS-1 dataset" className="h-full w-auto object-contain" />
+                  <img src="/hero/heatmap_v2.png" alt="" className="absolute inset-0 h-full w-full object-contain opacity-75 mix-blend-screen" />
                 </div>
                 <span className="absolute bottom-2 left-2 rounded bg-black/50 px-1.5 py-0.5 font-mono text-[9.5px] tracking-wider text-white/80 uppercase">
                   Grad-CAM++ · block5_conv4
@@ -136,9 +136,9 @@ function ProductMockup() {
                     <span className="font-mono">FSL FAST</span>
                   </div>
                   <div className="flex h-6 overflow-hidden rounded-lg text-[10px] font-semibold">
-                    <div className="flex w-[22%] items-center justify-center bg-sky-400 text-white">CSF</div>
-                    <div className="flex w-[51%] items-center justify-center bg-brand-500 text-white">Grey matter</div>
-                    <div className="flex w-[27%] items-center justify-center bg-ink-200 text-ink-800">WM</div>
+                    <div className="flex w-[34%] items-center justify-center bg-sky-400 text-white">CSF</div>
+                    <div className="flex w-[33%] items-center justify-center bg-brand-500 text-white">GM</div>
+                    <div className="flex w-[33%] items-center justify-center bg-ink-200 text-ink-800">WM</div>
                   </div>
                 </div>
                 <div className="rounded-xl bg-ink-50 p-3.5 text-[12px] leading-relaxed text-ink-600 ring-1 ring-ink-100">
@@ -159,7 +159,7 @@ function ProductMockup() {
 function MiniMeter() {
   return (
     <div className="mt-6 space-y-2.5">
-      {[["Non Demented", 7.7, "bg-brand-500"], ["Demented", 92.3, "bg-rose-500"]].map(([l, v, c]) => (
+      {[["Non Demented", 21.6, "bg-brand-500"], ["Demented", 78.4, "bg-rose-500"]].map(([l, v, c]) => (
         <div key={l}>
           <div className="mb-1 flex justify-between text-[11.5px] text-ink-500">
             <span>{l}</span>
@@ -177,8 +177,8 @@ function MiniHeat() {
   return (
     <div className="mt-6 flex h-24 items-center justify-center overflow-hidden rounded-xl bg-ink-950">
       <div className="relative h-full">
-        <img src="/hero/mri.png" alt="" className="h-full w-auto" />
-        <img src="/hero/heatmap.png" alt="" className="absolute inset-0 h-full w-full opacity-80 mix-blend-screen" />
+        <img src="/hero/mri_v2.png" alt="" className="h-full w-auto" />
+        <img src="/hero/heatmap_v2.png" alt="" className="absolute inset-0 h-full w-full opacity-80 mix-blend-screen" />
       </div>
     </div>
   );
@@ -368,7 +368,7 @@ export default function Landing() {
               measurements, and a rationale that cites the literature it draws on.
             </p>
             <div className="mt-10 grid max-w-md grid-cols-3 gap-6">
-              {[["38,430", "training slices"], ["347", "OASIS-1 subjects"], ["513", "PubMed abstracts"]].map(([n, l]) => (
+              {[["86,437", "OASIS-1 slices"], ["0.89", "patient-level test AUC"], ["513", "PubMed abstracts"]].map(([n, l]) => (
                 <div key={l}>
                   <p className="font-display text-[34px] leading-none">{n}</p>
                   <p className="mt-2 text-[12.5px] text-white/50">{l}</p>

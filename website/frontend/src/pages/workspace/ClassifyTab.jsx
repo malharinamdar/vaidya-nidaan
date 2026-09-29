@@ -1,6 +1,6 @@
 import { ClassBars, Analysing, VerdictCard } from "../../components/results";
 import { ml } from "../../lib/api";
-import { ErrorBox, NeedScan, RunButton, TabHeader, isVolume, useRun } from "./common";
+import { ErrorBox, NeedScan, RunButton, TabHeader, isVolume, useRun, isNotMRI } from "./common";
 
 export default function ClassifyTab({ scan, setResult }) {
   const { result, loading, error, run } = useRun(scan, setResult, "classify", async (file) => (await ml("/prediction", { file })).prediction);
@@ -10,16 +10,16 @@ export default function ClassifyTab({ scan, setResult }) {
       <TabHeader
         title="Classification"
         description="VGG-19 transfer-learning classifier trained on OASIS-1, scoring the slice as Demented or Non-demented."
-        action={scan && !volume && <RunButton onClick={run} loading={loading} hasResult={!!result} label="Classify scan" />}
+        action={scan && !volume && !isNotMRI(scan) && <RunButton onClick={run} loading={loading} hasResult={!!result} label="Classify scan" />}
       />
       <ErrorBox error={error} onRetry={run} />
-      {!scan || volume ? (
-        <NeedScan volumeNotSupported={volume} />
+      {!scan || volume || isNotMRI(scan) ? (
+        <NeedScan volumeNotSupported={volume} notMRI={isNotMRI(scan)} />
       ) : loading ? (
         <Analysing image={scan.url} steps={["Validating the image looks like an MRI", "Resizing to 128 × 128", "Running VGG-19 + dense head"]} />
       ) : result ? (
         <div className="space-y-6">
-          <VerdictCard label={result.prediction} probability={result.alzheimer_probability} size="lg" />
+          <VerdictCard label={result.prediction} probability={result.alzheimer_probability} threshold={result.threshold ?? 50} size="lg" />
           <div className="grid gap-6 md:grid-cols-2">
             <div className="rounded-2xl border border-ink-200 p-5">
               <p className="label-eyebrow mb-4">Class probabilities</p>
@@ -32,7 +32,7 @@ export default function ClassifyTab({ scan, setResult }) {
                   ["Backbone", "VGG-19 (ImageNet)"],
                   ["Head", "256 → 128 → softmax"],
                   ["Input", "128 × 128 axial slice"],
-                  ["Threshold", "P(Demented) ≥ 50%"],
+                  ["Threshold", `P(Demented) ≥ ${result.threshold ?? 50}%`],
                 ].map(([k, v]) => (
                   <div key={k}>
                     <dt className="text-ink-500">{k}</dt>

@@ -5,8 +5,8 @@ heuristic/NumPy fallback: if the model cannot be loaded the service fails loudly
 rather than fabricating a prediction — the correct behaviour for a diagnostic
 assistant (never invent a diagnosis).
 
-Mirrors ``research/scripts/gradcam_plus_plus.py`` /
-``research/notebooks/final_alzheimer_model.ipynb``.
+The deployed model is trained in ``research/notebooks/alzheimer_model_v2.ipynb``; its
+Grad-CAM++ cell uses the same algorithm as ``_tf_gradcam_pp`` below.
 """
 import io
 import os
@@ -75,7 +75,7 @@ def _softmax(x):
     return e / e.sum()
 
 
-# Model input preprocessing (config-driven; training used "raw" 0-255 pixels).
+# Model input preprocessing (config-driven: "vgg19" for the v2 model, "raw" 0-255 for v1).
 def _model_side(model):
     try:
         shape = model.input_shape
@@ -145,21 +145,17 @@ def _model_input(model, img):
 
 # Classification.
 #
-# IMPORTANT: this is a BINARY classifier (Non Demented vs Demented). The training set
-# (vedjosh/alzheimer-mri) has only two folders -- Non_Demented and Demented -- so the
-# labels are {0, 1}. The saved model's head is Dense(4, softmax) for legacy reasons, but
-# only neuron 0 (Non Demented) and neuron 3 carry signal; neurons 1 & 2 ("Very mild" /
-# "Mild") never received a training example and are dead -- verified across the dataset,
-# where argmax is only ever neuron 0 or neuron 3. So we report the honest binary decision
-# the model can actually make instead of a fabricated 4-level severity.
+# Binary classifier: Non Demented vs Demented. Output neuron 0 is Non Demented in both the v2
+# model (2-way softmax) and the legacy v1 model (4-wide head of which only neurons 0 and 3 were
+# trained), so P(Demented) = 1 - P(Non Demented) works for either.
 BINARY_CLASSES = ["Non Demented", "Demented"]
 
 
 def classify(file_bytes):
     """Return (label, dementia_probability_percent, per_class_probs, message).
 
-    Binary: P(Non Demented) is softmax neuron 0; P(Demented) = 1 - P(Non Demented),
-    which sums the remaining neurons and is robust to the model's legacy 4-wide head.
+    P(Non Demented) is softmax neuron 0 and P(Demented) = 1 - P(Non Demented); the label uses
+    config.DECISION_THRESHOLD (0.13 for the v2 model, tuned on validation patients).
     """
     model = _load_model()
     side = _model_side(model)
@@ -168,11 +164,12 @@ def classify(file_bytes):
         arr = _model_input(model, img)
         preds = model.predict(arr, verbose=0)[0]
     probs = np.asarray(preds, dtype=np.float64)
-    p_non = float(probs[0])                      # neuron 0 = Non Demented (trained)
-    p_dem = float(1.0 - p_non)                   # all remaining mass = Demented
-    label = "Non Demented" if p_non >= 0.5 else "Demented"
+    p_non = float(probs[0])                      # neuron 0 = Non Demented
+    p_dem = float(1.0 - p_non)                   # remaining mass = Demented
+    label = "Demented" if p_dem >= config.DECISION_THRESHOLD else "Non Demented"
     per_class = {"Non Demented": round(p_non * 100, 2), "Demented": round(p_dem * 100, 2)}
-    message = f"Predicted class: {label} (binary VGG-19 classifier: Demented vs Non Demented)."
+    message = (f"Predicted class: {label} (binary VGG-19 classifier; Demented when "
+               f"P(Demented) >= {config.DECISION_THRESHOLD * 100:g}%).")
     return label, round(p_dem * 100, 2), per_class, message
 
 
@@ -208,7 +205,7 @@ def _target_neuron(probs):
     """Output neuron to explain, consistent with the binary decision in classify():
     neuron 0 when Non Demented wins, else the strongest of the remaining (Demented) neurons."""
     probs = np.asarray(probs, dtype=np.float64)
-    if probs[0] >= 0.5:
+    if 1.0 - probs[0] < config.DECISION_THRESHOLD:
         return 0
     return 1 + int(np.argmax(probs[1:]))
 
@@ -321,3 +318,57 @@ def grad_cam(file_bytes, alpha=0.5):
         "hot_area_pct": hot_area_pct,          # share of the image with >= 50% of peak attribution
         "peak_region": peak_region,            # image-relative location of the strongest attribution
     }
+
+
+# Input check: is this upload an MRI slice like the ones the model was trained on?
+# A Mahalanobis out-of-distribution detector on global-average-pooled VGG-19 `block4_pool`
+# features (ImageNet preprocessing). Statistics are fitted on OASIS-1 slices by
+# build_ood_stats.py; block1-4 are frozen in both the v1 and v2 models, so they stay valid.
+_OOD_PATH = os.path.join(os.path.dirname(__file__), "ood_stats.npz")
+_ood = None
+_feat_model = None
+
+
+def _ood_stats():
+    global _ood
+    if _ood is None:
+        if not os.path.exists(_OOD_PATH):
+            _ood = {}
+        else:
+            z = np.load(_OOD_PATH)
+            t = float(z["threshold"])
+            _ood = {"mean": z["mean"].astype(np.float64), "precision": z["precision"].astype(np.float64),
+                    "threshold": t, "reject": float(z["reject_threshold"]) if "reject_threshold" in z else 1.75 * t}
+    return _ood
+
+
+def ood_features(file_bytes_list):
+    """(n, 512) pooled block4_pool features for raw image bytes."""
+    global _feat_model
+    model = _load_model()
+    side = _model_side(model)
+    with _tf_lock:
+        if _feat_model is None:
+            _feat_model = _tf.keras.Model(model.inputs, model.get_layer("block4_pool").output)
+        x = np.stack([np.asarray(load_image(b, size=(side, side)), dtype=np.float32) for b in file_bytes_list])
+        maps = _feat_model.predict(_apply_preprocess(x, "vgg19"), verbose=0)
+    return maps.mean(axis=(1, 2)).astype(np.float64)
+
+
+def mri_likeness(file_bytes):
+    """Classify an upload against the OASIS training distribution.
+
+    Returns {"status", "distance", "threshold", "reject_threshold"} where status is
+      "ok"        -- within the range of real OASIS slices,
+      "atypical"  -- MRI-like but framed differently (orientation, padding, plane),
+      "not_mri"   -- far outside anything MRI-like (screenshots, photos, documents).
+    Accepts everything as "ok" if no statistics have been fitted.
+    """
+    stats = _ood_stats()
+    if not stats:
+        return {"status": "ok", "distance": None, "threshold": None, "reject_threshold": None}
+    d = ood_features([file_bytes])[0] - stats["mean"]
+    dist = float(np.sqrt(d @ stats["precision"] @ d))
+    status = "ok" if dist <= stats["threshold"] else ("atypical" if dist <= stats["reject"] else "not_mri")
+    return {"status": status, "distance": round(dist, 1), "threshold": round(stats["threshold"], 1),
+            "reject_threshold": round(stats["reject"], 1)}

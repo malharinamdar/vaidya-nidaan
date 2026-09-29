@@ -39,11 +39,13 @@ export const formatBytes = (n = 0) =>
 
 export const isDemented = (label) => label && label !== "Non Demented";
 
-// Plain-language label for how far the score sits from the 50% decision threshold.
-export function signalStrength(pDemented) {
-  const margin = Math.abs(pDemented - 50);
-  if (margin >= 40) return "High";
-  if (margin >= 20) return "Moderate";
+// Plain-language label for how far the score sits from the decision threshold, as a share of
+// the room on that side of it (so a 13% threshold is treated the same way as a 50% one).
+export function signalStrength(pDemented, threshold = 50) {
+  const room = pDemented >= threshold ? 100 - threshold : threshold;
+  const margin = room > 0 ? Math.abs(pDemented - threshold) / room : 1;
+  if (margin >= 0.8) return "High";
+  if (margin >= 0.4) return "Moderate";
   return "Low";
 }
 

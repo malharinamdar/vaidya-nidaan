@@ -106,7 +106,7 @@ curl -s -X POST http://localhost:5001/diagnosis  -H "Authorization: Bearer $T" -
 5.  TROUBLESHOOTING
 ──────────────────────────────────────────────────────────────────────
 - prediction fails "No trained Alzheimer model" -> check ml_service/.env
-  ALZHEIMER_MODEL_PATH points to ml_service/models/alzheimer_model.h5 , restart.
+  ALZHEIMER_MODEL_PATH points to ml_service/models/alzheimer_vgg19_v2.keras , restart.
 - 401 from :5001                   -> JWT_SECRET differs between the two .env files.
 - "Address already in use"         -> free ports (step 0), re-run ./start-all.sh
 - TensorFlow error mentioning protobuf ->

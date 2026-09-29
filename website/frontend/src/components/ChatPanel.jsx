@@ -184,7 +184,7 @@ export default function ChatPanel({ patientId = null, context, suggestions = DEF
     setBusy(true);
     try {
       const res = await ml("/chat", { text, file: img || undefined, history, context: context || undefined });
-      const assistantMsg = { role: "assistant", content: res.message, sources: res.sources || [] };
+      const assistantMsg = { role: "assistant", content: res.message, sources: res.sources || [], citationCheck: res.citation_check };
       setMessages((ms) => [...ms, assistantMsg]);
       persist(userMsg, assistantMsg);
     } catch (e) {
@@ -319,7 +319,10 @@ export default function ChatPanel({ patientId = null, context, suggestions = DEF
                           </ReactMarkdown>
                         </div>
                         {m.sources?.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {m.citationCheck?.checked > 0 && (
+                              <span className="text-[11.5px] font-medium text-brand-700">✓ citations verified</span>
+                            )}
                             {m.sources.map((s) => (
                               <a
                                 key={s.n}

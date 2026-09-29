@@ -5,7 +5,7 @@ import { Analysing } from "../../components/results";
 import { Button, useToast } from "../../components/ui";
 import { api, ml } from "../../lib/api";
 import { formatDateTime, isDemented } from "../../lib/format";
-import { ErrorBox, NeedScan, TabHeader, isVolume } from "./common";
+import { ErrorBox, NeedScan, TabHeader, isVolume, isNotMRI } from "./common";
 
 const STEPS = [
   "Classifying the slice with VGG-19",
@@ -84,8 +84,8 @@ export default function ReportTab({ patient, scan, reports }) {
         description="Runs every analysis on the current scan, grounds the rationale in retrieved literature, and saves a printable report to this patient's history."
       />
       <ErrorBox error={error} onRetry={generate} />
-      {!scan || volume ? (
-        <NeedScan volumeNotSupported={volume} />
+      {!scan || volume || isNotMRI(scan) ? (
+        <NeedScan volumeNotSupported={volume} notMRI={isNotMRI(scan)} />
       ) : loading ? (
         <div className="py-4">
           <Analysing image={scan.url} steps={STEPS} />

@@ -5,9 +5,9 @@ import { BIOMARKER_LABELS, TISSUE, isDemented, signalStrength } from "../lib/for
 import { Badge, cx } from "./ui";
 
 // ------------------------------------------------------------------ Verdict
-export function VerdictCard({ label, probability, className, size = "md" }) {
+export function VerdictCard({ label, probability, threshold = 50, className, size = "md" }) {
   const dem = isDemented(label);
-  const strength = signalStrength(probability);
+  const strength = signalStrength(probability, threshold);
   return (
     <div
       className={cx(
@@ -42,27 +42,37 @@ export function VerdictCard({ label, probability, className, size = "md" }) {
           </p>
         </div>
       </div>
-      <ProbabilityMeter value={probability} className="mt-5" />
+      <ProbabilityMeter value={probability} threshold={threshold} className="mt-5" />
     </div>
   );
 }
 
 // ------------------------------------------------------------------ Meter
-export function ProbabilityMeter({ value, className }) {
+export function ProbabilityMeter({ value, threshold = 50, className }) {
   return (
     <div className={className}>
-      <div className="relative h-2.5 rounded-full bg-gradient-to-r from-brand-200 via-amber-100 to-rose-200">
-        <div className="absolute top-1/2 left-1/2 h-4 w-px -translate-y-1/2 bg-ink-400" />
+      {/* Threshold tag sits over its marker, kept inside the card near the edges. */}
+      <div className="relative mb-1.5 h-4 font-mono text-[10.5px] tracking-wide text-ink-500 uppercase">
+        <span className="absolute whitespace-nowrap" style={{ left: `clamp(0px, calc(${threshold}% - 3.25rem), calc(100% - 6.5rem))` }}>
+          {threshold}% threshold
+        </span>
+      </div>
+      <div
+        className="relative h-2.5 rounded-full"
+        style={{
+          background: `linear-gradient(90deg, var(--color-brand-200, #a3ead1), var(--color-amber-100, #fef3c7) ${threshold}%, var(--color-rose-200, #fecdd3))`,
+        }}
+      >
+        <div className="absolute top-1/2 h-4 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-500" style={{ left: `${threshold}%` }} />
         <motion.div
           className="absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-ink-900 shadow-md"
-          initial={{ left: "50%" }}
+          initial={{ left: `${threshold}%` }}
           animate={{ left: `${Math.min(Math.max(value, 1), 99)}%` }}
           transition={{ type: "spring", damping: 20, stiffness: 120 }}
         />
       </div>
       <div className="mt-2 flex justify-between font-mono text-[10.5px] tracking-wide text-ink-500 uppercase">
         <span>Non-demented</span>
-        <span>50% threshold</span>
         <span>Demented</span>
       </div>
     </div>

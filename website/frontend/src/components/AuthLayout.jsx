@@ -46,8 +46,8 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
             <div className="overflow-hidden rounded-3xl bg-white/10 p-3 ring-1 ring-white/20 backdrop-blur-xl">
               <div className="relative flex aspect-[2/1] items-center justify-center overflow-hidden rounded-2xl bg-ink-950">
                 <div className="relative h-full">
-                  <img src="/hero/mri.png" alt="" className="h-full w-auto" />
-                  <img src="/hero/heatmap.png" alt="" className="absolute inset-0 h-full w-full opacity-75 mix-blend-screen" />
+                  <img src="/hero/mri_v2.png" alt="" className="h-full w-auto" />
+                  <img src="/hero/heatmap_v2.png" alt="" className="absolute inset-0 h-full w-full opacity-75 mix-blend-screen" />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 p-2 pt-3 text-[11.5px]">

@@ -76,10 +76,35 @@ def _require_mri():
     lower = (f.filename or "").lower()
     if lower.endswith(report_mod.VOLUMETRIC_EXTS):
         return data, f.filename, None  # NIfTI volumes are validated by nibabel downstream
+    check = _check_image(data)
+    if check["status"] == "not_mri":
+        return None, None, (jsonify(message=check["message"], error="input_not_mri", check=check), 400)
+    return data, f.filename, None
+
+
+NOT_MRI_MESSAGE = "This doesn't look like a brain MRI scan. Upload an axial T1-weighted MRI slice (PNG or JPG)."
+
+
+def _check_image(data):
+    """Two-stage input check for 2D uploads.
+
+    1. mri_check.is_mri -- cheap pixel heuristics (readable, greyscale, dark field, tissue present).
+    2. inference.mri_likeness -- Mahalanobis distance of VGG-19 block4 features from the
+       OASIS training slices; catches screenshots, documents and photos the heuristics miss.
+    """
     ok, reason, metrics = mri_check.is_mri(data)
     if not ok:
-        return None, None, (jsonify(message=reason, error="input_not_mri", metrics=metrics), 400)
-    return data, f.filename, None
+        return {"status": "not_mri", "message": f"{NOT_MRI_MESSAGE} ({reason})", "stage": "pixels", "metrics": metrics}
+    result = inference.mri_likeness(data)
+    if result["status"] == "not_mri":
+        result["message"] = NOT_MRI_MESSAGE
+    elif result["status"] == "atypical":
+        result["message"] = ("MRI-like image, but framed differently from the axial OASIS slices the model was "
+                             "trained on (orientation, padding or plane).")
+    else:
+        result["message"] = "Brain MRI slice."
+    result["stage"] = "features"
+    return result
 
 
 def _require_image(data, filename):
@@ -88,6 +113,19 @@ def _require_image(data, filename):
         return jsonify(message="Classification and Grad-CAM++ need a 2D MRI slice (PNG/JPG). "
                                "NIfTI volumes are supported by Biomarker analysis."), 400
     return None
+
+
+@app.post("/validate")
+@protected("analysis")
+def validate():
+    """Check an upload before analysis: {"status": "ok" | "atypical" | "not_mri", "message", ...}."""
+    f = request.files.get("file")
+    if f is None:
+        return jsonify(message="No file uploaded (expected form field 'file')."), 400
+    data = f.read()
+    if (f.filename or "").lower().endswith(report_mod.VOLUMETRIC_EXTS):
+        return jsonify(status="ok", message="NIfTI volume (used for biomarker analysis).", stage="volume")
+    return _respond_cached(cache.make_key("validate", data), lambda: _check_image(data))
 
 
 @app.post("/prediction")
@@ -101,8 +139,8 @@ def prediction():
         return err
     def compute():
         label, prob, per_class, message = inference.classify(data)
-        return {"prediction": {"prediction": label, "alzheimer_probability": prob,
-                               "per_class": per_class, "message": message}}
+        return {"prediction": {"prediction": label, "alzheimer_probability": prob, "per_class": per_class,
+                               "threshold": round(config.DECISION_THRESHOLD * 100, 1), "message": message}}
 
     return _respond_cached(cache.make_key("prediction", data), compute)
 
@@ -188,7 +226,8 @@ def _chat_response():
 
     def compute():
         reply = chatbot.answer(text, image_bytes=image_bytes, image_mime=image_mime, history=history, context=context)
-        return {"message": reply["message"], "sources": reply["sources"], "offline": reply.get("offline", False)}
+        return {"message": reply["message"], "sources": reply["sources"], "offline": reply.get("offline", False),
+                "citation_check": reply.get("citation_check")}
 
     key = cache.make_key("chat", config.OPENAI_MODEL, text, context, history, image_bytes or b"")
     return _respond_cached(key, compute, cacheable=lambda r: not r["offline"])

@@ -12,7 +12,7 @@ OPENAI_API_KEY="$(get OPENAI_API_KEY)"
 JWT_SECRET="$(get JWT_SECRET)"
 [ -n "$OPENAI_API_KEY" ] || { echo "OPENAI_API_KEY missing in .env"; exit 1; }
 [ -n "$JWT_SECRET" ] || { echo "JWT_SECRET missing in .env"; exit 1; }
-[ -f models/alzheimer_model.h5 ] || { echo "models/alzheimer_model.h5 not found"; exit 1; }
+[ -f models/alzheimer_vgg19_v2.keras ] || { echo "models/alzheimer_vgg19_v2.keras not found"; exit 1; }
 
 "$MODAL" secret create vaidya-nidaan --force \
   OPENAI_API_KEY="$OPENAI_API_KEY" \

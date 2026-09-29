@@ -5,6 +5,7 @@ report the frontend can render and download.
 """
 from datetime import datetime, timezone
 
+import config
 import inference
 import report as report_mod
 import chatbot
@@ -27,6 +28,7 @@ def _structured_text(prediction, biomarkers, biomarker_report, rationale, patien
         "1. AI MODEL PREDICTION (VGG-19 Alzheimer classifier)",
         f"  Predicted class      : {prediction.get('prediction')}",
         f"  Dementia probability : {prediction.get('alzheimer_probability')}%",
+        f"  Decision threshold   : P(Demented) >= {prediction.get('threshold', 50)}%",
         "  Per-class probabilities:",
     ]
     for k, v in per_class.items():
@@ -83,9 +85,9 @@ def _retrieve_literature(prediction, biomarkers, patient=None, k=5):
         hits = medical_rag.retrieve(query, k=k)
     except Exception as exc:  # store missing / offline / import error
         print(f"[diagnosis] literature retrieval unavailable ({exc}); rationale runs ungrounded.")
-        return None, []
+        return None, [], []
     if not hits:
-        return None, []
+        return None, [], []
     formatted = "\n".join(
         f"[{i + 1}] {h['title']} ({h['year']}): {h['abstract'][:1100]}" for i, h in enumerate(hits)
     )
@@ -94,7 +96,7 @@ def _retrieve_literature(prediction, biomarkers, patient=None, k=5):
          "distance": round(h["distance"], 3)}
         for i, h in enumerate(hits)
     ]
-    return formatted, citations
+    return formatted, citations, [(h["title"], h["abstract"]) for h in hits]
 
 
 def run_diagnosis(file_bytes, filename, patient=None, run_segmentation=True):
@@ -104,6 +106,7 @@ def run_diagnosis(file_bytes, filename, patient=None, run_segmentation=True):
         "prediction": label,
         "alzheimer_probability": prob,
         "per_class": per_class,
+        "threshold": round(config.DECISION_THRESHOLD * 100, 1),
         "message": message,
     }
 
@@ -123,7 +126,7 @@ def run_diagnosis(file_bytes, filename, patient=None, run_segmentation=True):
     biomarkers = rep["biomarkers"]
 
     # 3.5) RAG: retrieve supporting literature to ground the rationale
-    literature, lit_citations = _retrieve_literature(prediction, biomarkers, patient)
+    literature, lit_citations, abstracts = _retrieve_literature(prediction, biomarkers, patient)
 
     # 4) Grounded LLM clinical rationale (prediction + biomarkers + retrieved literature)
     rationale, rationale_source = chatbot.generate_rationale(
@@ -131,6 +134,10 @@ def run_diagnosis(file_bytes, filename, patient=None, run_segmentation=True):
         gradcam_summary=gradcam_summary, literature=literature,
         native_volume=rep.get("native_volume", False),
     )
+    # 4.5) Hallucination control: drop citations the cited abstract does not support.
+    citation_check = {"checked": 0, "supported": 0, "removed": 0}
+    if rationale_source == "llm" and abstracts:
+        rationale, citation_check = chatbot.verify_citations(rationale, abstracts)
 
     full_text = _structured_text(
         prediction, biomarkers, rep["report"], rationale, patient, rep["source"], lit_citations
@@ -148,6 +155,7 @@ def run_diagnosis(file_bytes, filename, patient=None, run_segmentation=True):
         "native_volume": rep.get("native_volume", False),
         "rationale": rationale,
         "rationale_source": rationale_source,
+        "citation_check": citation_check,
         "literature": lit_citations,
         "report": full_text,
         "classifier_backend": inference.backend_name(),

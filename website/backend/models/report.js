@@ -20,6 +20,7 @@ const reportSchema = new mongoose.Schema(
       label: { type: String, required: true },
       probability: { type: Number, required: true }, // P(Demented), %
       perClass: { type: mongoose.Schema.Types.Mixed },
+      threshold: { type: Number, default: 50 }, // decision threshold on P(Demented), %
       message: String,
     },
     gradcam: {
@@ -34,6 +35,7 @@ const reportSchema = new mongoose.Schema(
     nativeVolume: { type: Boolean, default: false },
     rationale: String,
     literature: [{ n: Number, title: String, year: Number, url: String, distance: Number }],
+    citationCheck: { checked: Number, supported: Number, removed: Number },
     reportText: String,
     classifierBackend: String,
   },

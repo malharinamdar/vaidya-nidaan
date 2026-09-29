@@ -7,9 +7,11 @@ application reimplements this logic as a service in [`../ml_service`](../ml_serv
 ```
 research/
 ├── notebooks/
-│   ├── final_alzheimer_model.ipynb   # VGG-19 Alzheimer classifier training
+│   ├── alzheimer_model_v2.ipynb      # v2 classifier (deployed): patient-level split, class weights, block5 fine-tuning
+│   ├── final_alzheimer_model.ipynb   # v1 classifier (slice-level split)
 │   ├── chatbot_rag.ipynb             # GPT-4 + ChromaDB RAG chatbot experiments
 │   └── report.ipynb                  # FSL medical-report generation
+├── results/v2/                       # v2 test metrics (with bootstrap CIs), per-patient predictions, split
 └── scripts/
     ├── feature_image_model.py        # Multimodal (image + tabular) model
     ├── gradcam_plus_plus.py          # Grad-CAM++ heatmap implementation

@@ -35,8 +35,11 @@ image = (
         "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
         "FSLDIR": "/opt/conda",
         "FSLOUTPUTTYPE": "NIFTI_GZ",
-        "ALZHEIMER_MODEL_PATH": f"{APP_DIR}/models/alzheimer_model.h5",
-        "MODEL_PREPROCESS": "raw",
+        # v2 model (research/notebooks/alzheimer_model_v2.ipynb): ImageNet preprocessing and the
+        # slice-level threshold tuned on the validation patients (research/results/v2/metrics.json).
+        "ALZHEIMER_MODEL_PATH": f"{APP_DIR}/models/alzheimer_vgg19_v2.keras",
+        "MODEL_PREPROCESS": "vgg19",
+        "DECISION_THRESHOLD": "0.13",
         "GRADCAM_LAYER": "block5_conv4",
         "OPENAI_MODEL": "gpt-4o",
     })
@@ -49,7 +52,8 @@ image = (
     # them on every `modal deploy`, so code changes always ship. (A copy=True layer is cached.)
     .add_local_dir(
         ".", APP_DIR,
-        ignore=[".venv", ".modal-venv", "**/__pycache__", "*.pyc", ".env", "models/models--*", "models/CACHEDIR.TAG"],
+        ignore=[".venv", ".modal-venv", "**/__pycache__", "*.pyc", ".env", "models/models--*", "models/CACHEDIR.TAG",
+                "models/*.h5", "models/.locks", "**/.DS_Store"],
     )
 )
 

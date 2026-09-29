@@ -155,6 +155,7 @@ router.post('/:id/reports', async (req, res) => {
         label: pred.prediction,
         probability: pred.alzheimer_probability,
         perClass: pred.per_class,
+        threshold: typeof pred.threshold === 'number' ? pred.threshold : 50,
         message: pred.message,
       },
       gradcam: {
@@ -169,6 +170,7 @@ router.post('/:id/reports', async (req, res) => {
       nativeVolume: !!d.native_volume,
       rationale: d.rationale,
       literature: Array.isArray(d.literature) ? d.literature : [],
+      citationCheck: d.citation_check || undefined,
       reportText: d.report,
       classifierBackend: d.classifier_backend,
     });
