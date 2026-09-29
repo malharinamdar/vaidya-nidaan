@@ -1,118 +1,80 @@
-import React, { useState } from "react";
-import axios from "axios";
-import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { API_BASE } from "../api";
+import { useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { LuArrowRight, LuSparkles } from "react-icons/lu";
+import AuthLayout from "../components/AuthLayout";
+import { Alert, Button, Field, Input } from "../components/ui";
+import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 
-function Login() {
+export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(null); // "login" | "demo"
+  const { signIn, startDemo } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = params.get("next") || "/dashboard";
 
-  const handleSubmit = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    setError(""); // Reset error state
-
+    setError(null);
+    setBusy("login");
     try {
-      const response = await axios.post(`${API_BASE}/api/doctors/login`, {
-        email,
-        password,
-      });
-
-      if (response.data.token) {
-        // Store the JWT token in localStorage
-        localStorage.setItem("token", response.data.token);
-
-        // Redirect to the dashboard (change route if needed)
-        navigate("/dashboard");
-      }
+      const res = await api("/api/doctors/login", { method: "POST", body: { email, password } });
+      signIn(res.token, res.doctor);
+      navigate(next, { replace: true });
     } catch (err) {
-      // Log the error for debugging
-      console.error(err);
+      setError(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
 
-      // Handle errors and show meaningful message
-      if (err.response) {
-        setError(err.response.data.message || "Something went wrong");
-      } else {
-        setError("Network error. Please try again later.");
-      }
+  const demo = async () => {
+    setError(null);
+    setBusy("demo");
+    try {
+      await startDemo();
+      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#D0F0E0] via-white to-[#D0F0E0] flex items-center justify-center p-8">
-      <motion.div
-        className="w-full max-w-md p-8 bg-white rounded-2xl shadow-lg transform transition duration-500 hover:scale-105"
-        initial={{ opacity: 0, y: -50 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1 }}
-      >
-        <h2 className="text-3xl font-bold text-center text-[#0A0A32] mb-4">
-          Welcome Back!
-        </h2>
-        <p className="text-center text-[#0A0A32] opacity-80 mb-6">
-          Login to continue to your dashboard
-        </p>
-        {error && (
-          <div className="bg-red-100 text-red-700 p-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-[#0A0A32]"
-            >
-              Email Address
-            </label>
-            <input
-              type="email"
-              id="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border border-[#0A0A32] rounded-lg focus:ring focus:ring-[#0A0A32] focus:outline-none"
-              required
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-[#0A0A32]"
-            >
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-[#0A0A32] rounded-lg focus:ring focus:ring-[#0A0A32] focus:outline-none"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full bg-[#0A0A32] text-white py-3 rounded-lg hover:bg-[#0C0C40] focus:ring focus:ring-[#0A0A32] focus:outline-none transition"
-          >
-            Login
-          </button>
-        </form>
-        <p className="text-center text-[#0A0A32] opacity-80 mt-6">
-          Don't have an account?{" "}
-          <a
-            href="/signup"
-            className="text-[#0A0A32] font-semibold hover:underline"
-          >
-            Sign up
-          </a>
-        </p>
-      </motion.div>
-    </div>
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Sign in to your clinician workspace."
+      footer={
+        <>
+          New to Vaidya Nidaan?{" "}
+          <Link to="/signup" className="font-semibold text-ink-900 underline-offset-4 hover:underline">
+            Create an account
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="space-y-5">
+        {error && <Alert>{error}</Alert>}
+        <Field label="Email">
+          <Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@hospital.org" required />
+        </Field>
+        <Field label="Password">
+          <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+        </Field>
+        <Button type="submit" size="lg" className="w-full rounded-full" loading={busy === "login"} iconRight={LuArrowRight}>
+          Sign in
+        </Button>
+      </form>
+      <div className="my-6 flex items-center gap-3 text-[12px] text-ink-400">
+        <span className="h-px flex-1 bg-ink-200" /> or <span className="h-px flex-1 bg-ink-200" />
+      </div>
+      <Button variant="secondary" size="lg" className="w-full rounded-full" icon={LuSparkles} loading={busy === "demo"} onClick={demo}>
+        Explore the demo workspace
+      </Button>
+    </AuthLayout>
   );
 }
-
-export default Login;

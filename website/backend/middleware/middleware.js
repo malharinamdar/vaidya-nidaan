@@ -1,21 +1,17 @@
 const jwt = require('jsonwebtoken');
-const Doctor = require('../models/doctor');
 
-const protect = async (req, res, next) => {
-    let token;
-
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-        try {
-            token = req.headers.authorization.split(' ')[1];
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.user = decoded; // Store decoded token directly
-            next();
-        } catch (error) {
-            res.status(401).json({ message: 'Not authorized, token failed' });
-        }
-    } else {
-        res.status(401).json({ message: 'Not authorized, no token' });
-    }
+// Verifies the Bearer JWT issued at login (or by the demo endpoint).
+const protect = (req, res, next) => {
+  const header = req.headers.authorization || '';
+  if (!header.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Not authorized — please sign in.' });
+  }
+  try {
+    req.user = jwt.verify(header.slice(7).trim(), process.env.JWT_SECRET);
+    return next();
+  } catch (_err) {
+    return res.status(401).json({ message: 'Session expired — please sign in again.' });
+  }
 };
 
 module.exports = { protect };

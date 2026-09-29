@@ -1,11 +1,18 @@
-import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "../lib/auth";
+import { Spinner } from "./ui";
 
-const PrivateRoute = ({ element: Element, ...rest }) => {
-  const token = localStorage.getItem('token'); // Retrieve token from localStorage
-
-  // Check for authentication and render the Element or redirect to login
-  return token ? <Element {...rest} /> : <Navigate to="/login" />;
-};
-
-export default PrivateRoute;
+// Guards every workspace route: no token -> sign in (and come back afterwards).
+export default function PrivateRoute({ children }) {
+  const { token, loading } = useAuth();
+  const location = useLocation();
+  if (!token) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-50">
+        <Spinner className="h-6 w-6" />
+      </div>
+    );
+  }
+  return children;
+}

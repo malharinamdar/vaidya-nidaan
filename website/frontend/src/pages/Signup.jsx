@@ -1,127 +1,75 @@
-import React, { useState } from "react";
-import axios from "axios";
-import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { API_BASE } from "../api";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { LuArrowRight } from "react-icons/lu";
+import AuthLayout from "../components/AuthLayout";
+import { Alert, Button, Field, Input, Select } from "../components/ui";
+import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 
-function Signup() {
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    specialty: "", // Changed from speciality to specialty
-  });
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+const SPECIALTIES = ["Neurologist", "Radiologist", "Psychiatrist", "Geriatrician", "General Physician", "Researcher", "Other"];
+
+export default function Signup() {
+  const [form, setForm] = useState({ name: "", email: "", password: "", specialty: "" });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const { signIn } = useAuth();
   const navigate = useNavigate();
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
-
+    setError(null);
+    if (form.password.length < 8) return setError("Password must be at least 8 characters.");
+    setBusy(true);
     try {
-      // Send form data to backend for doctor signup
-      const response = await axios.post(
-        `${API_BASE}/api/doctors/signup`,
-        formData
-      );
-
-      if (response.status === 201) {
-        setSuccess("Account created successfully! Redirecting to login...");
-        setTimeout(() => navigate("/login"), 2000); // Redirect to login after 2 seconds
-      }
+      const res = await api("/api/doctors/signup", { method: "POST", body: form });
+      signIn(res.token, res.doctor);
+      navigate("/dashboard", { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong");
+      setError(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-[#D0F0E0] via-white to-[#D0F0E0]">
-      <motion.div 
-        className="w-full max-w-md p-8 bg-white rounded-2xl shadow-lg transform transition duration-500 hover:scale-105"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1 }}
-      >
-        <h2 className="text-3xl font-bold text-center text-[#0A0A32] mb-4">
-          Create an Account
-        </h2>
-        <p className="text-center text-[#0A0A32] opacity-80 mb-6">
-          Join us to manage your patients seamlessly
-        </p>
-        {error && (
-          <div className="bg-red-100 text-red-700 p-3 rounded mb-4">{error}</div>
-        )}
-        {success && (
-          <div className="bg-green-100 text-green-700 p-3 rounded mb-4">
-            {success}
-          </div>
-        )}
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <input
-            type="text"
-            name="name"
-            placeholder="Name"
-            value={formData.name}
-            onChange={handleChange}
-            className="w-full px-4 py-3 border rounded-md focus:ring focus:ring-[#0A0A32]"
-            required
-          />
-          <input
-            type="email"
-            name="email"
-            placeholder="Email"
-            value={formData.email}
-            onChange={handleChange}
-            className="w-full px-4 py-3 border rounded-md focus:ring focus:ring-[#0A0A32]"
-            required
-          />
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={formData.password}
-            onChange={handleChange}
-            className="w-full px-4 py-3 border rounded-md focus:ring focus:ring-[#0A0A32]"
-            required
-          />
-          <select
-            name="specialty" // Changed from speciality to specialty
-            value={formData.specialty}
-            onChange={handleChange}
-            className="w-full px-4 py-3 border rounded-md focus:ring focus:ring-[#0A0A32]"
-            required
-          >
-            <option value="" disabled>
-              Select Specialty
-            </option>
-            <option value="Neurologist">Neurologist</option>
-            <option value="Oncologist">Oncologist</option>
-            <option value="General Physician">General Physician</option>
-            <option value="Pediatrician">Pediatrician</option>
-            <option value="Other">Other</option>
-          </select>
-          <button
-            type="submit"
-            className="w-full bg-[#0A0A32] text-white py-3 rounded-md hover:bg-[#0C0C40] transition"
-          >
-            Sign up
-          </button>
-        </form>
-        <p className="text-center text-[#0A0A32] opacity-80 mt-6">
+    <AuthLayout
+      title="Create your workspace"
+      subtitle="For clinicians and researchers evaluating explainable neuroimaging AI."
+      footer={
+        <>
           Already have an account?{" "}
-          <a href="/login" className="text-[#0A0A32] font-semibold hover:underline">
-            Login
-          </a>
-        </p>
-      </motion.div>
-    </div>
+          <Link to="/login" className="font-semibold text-ink-900 underline-offset-4 hover:underline">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={submit} className="space-y-5">
+        {error && <Alert>{error}</Alert>}
+        <Field label="Full name">
+          <Input autoComplete="name" value={form.name} onChange={set("name")} placeholder="Dr. Asha Kulkarni" required />
+        </Field>
+        <Field label="Work email">
+          <Input type="email" autoComplete="email" value={form.email} onChange={set("email")} placeholder="you@hospital.org" required />
+        </Field>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field label="Password" hint="At least 8 characters">
+            <Input type="password" autoComplete="new-password" value={form.password} onChange={set("password")} placeholder="••••••••" required minLength={8} />
+          </Field>
+          <Field label="Specialty">
+            <Select value={form.specialty} onChange={set("specialty")} required>
+              <option value="" disabled>Select…</option>
+              {SPECIALTIES.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Button type="submit" size="lg" className="w-full rounded-full" loading={busy} iconRight={LuArrowRight}>
+          Create account
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }
-
-export default Signup;

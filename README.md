@@ -1,313 +1,110 @@
 # Vaidya Nidaan
-*'Vaidya Nidaan' translates from Sanskrit as "Medical Diagnosis".*
 
-> 🏅 **3rd Place** (among 400+ teams) at PICT Techfiesta 2025 Hackathon
+*"Vaidya Nidaan" is Sanskrit for "medical diagnosis".*
 
-![Project Logo](docs/images/op1.jpeg)
+> 🏅 **3rd place** of 400+ teams at PICT Techfiesta 2025
+>
+> **Live demo → [vaidya-nidaan.vercel.app](https://vaidya-nidaan.vercel.app)** (click *Try the demo* — no sign-up)
 
-> **Vaidya Nidaan** is a machine learning based diagnostic assistance system for Alzheimer’s detection using MRI scans, biomarker extraction with FSL, and explainability via Grad-CAM. The platform integrates VGG-19 for classification, FSL for biomarker computation, and GPT-4-turbo for an interactive multilingual chatbot (English, Hindi, Marathi, any regional Indian language).
+**Explainable decision support for Alzheimer's MRI.** Upload one axial brain-MRI slice and Vaidya Nidaan:
 
----
+1. **classifies** it (Demented vs Non-demented) with a transfer-learned VGG-19,
+2. **explains** the decision with Grad-CAM++ you can fade over the anatomy,
+3. **measures** tissue composition with FSL (BET + FAST),
+4. **drafts a clinical rationale** with GPT-4o, grounded in PubMed/MEDLINE abstracts it retrieves and cites,
 
-## 🔍 Features
+…and saves everything as a printable report in the patient's history. A multilingual assistant (English, Hindi,
+Marathi, …) answers follow-up questions with PubMed citations; conversations are saved per patient.
 
-- **MRI Classification**: 95 % accuracy Alzheimer’s detection with a fine-tuned VGG-19 model.
-- **Explainability**: Grad-CAM++ heatmap overlays highlight impacted regions.
-- **Biomarker Extraction**: Automated volume metrics & statistical biomarkers via FSL.
-- **Multilingual Chatbot**: GPT-4-turbo RAG chatbot providing support to Indian regional languages as well.
-- **Scalable Storage**: Multer for local uploads & Cloudinary for cloud-based image hosting.
-- **Secure Backend**: Node.js API with JWT auth in HTTP-only cookies and PostgreSQL via Prisma.
+![Landing page](docs/images/v2/landing.jpg)
 
----
-
-## 📦 Repository Structure
-
-The system is split into three services — a **React frontend**, a **Node.js API gateway**, and a **Python ML/inference service** — plus the original research artifacts.
-
-```text
-vaidya-nidaan/
-├── website/
-│   ├── backend/                    # Node.js + Express API (auth + patient records)
-│   │   ├── middleware/             # JWT auth middleware, Multer upload config
-│   │   ├── models/                 # Mongoose schemas (Doctor, Patient)
-│   │   ├── routes/                 # doctorRoutes (auth), patientRoutes (CRUD)
-│   │   ├── server.js               # Entrypoint (auto in-memory MongoDB fallback)
-│   │   ├── .env.example
-│   │   └── package.json
-│   └── frontend/                   # React + Vite single-page application
-│       └── src/
-│           ├── api.js              # Central API_BASE / ML_BASE configuration
-│           ├── pages/              # Landing, Login, Signup, Dashboard, Profile,
-│           │                       #   AlzheimerDetection, GRAD-CAM, BiomarkerAnalysis,
-│           │                       #   DiagnosisReport, Chatbot
-│           └── components/         # PrivateRoute (JWT guard)
-├── ml_service/                     # Python Flask inference service
-│   ├── app.py                      # HTTP API: prediction, gradcam, report, diagnosis, chat
-│   ├── inference.py                # VGG-19 classifier + Grad-CAM++ (TensorFlow)
-│   ├── report.py                   # FSL biomarker analysis (BET + FAST)
-│   ├── chatbot.py                  # GPT-4o multilingual chatbot + clinical rationale
-│   ├── diagnosis.py                # Combined diagnosis report orchestration
-│   ├── config.py                   # Env loading + Hugging Face model download
-│   ├── requirements.txt
-│   └── .env.example
-├── research/                       # Original notebooks & scripts (training, Grad-CAM, FSL, RAG)
-│   ├── notebooks/                  # final_alzheimer_model, chatbot_rag, report
-│   └── scripts/                    # feature_image_model, gradcam_plus_plus, fsl_report
-├── docs/
-│   ├── images/                     # README screenshots (banner, architecture, heatmap…)
-│   └── samples/                    # Sample MRI scan + example FSL report
-├── start-all.sh                    # One-command launcher for all three services
-├── RUN_LOCAL.md                    # Detailed local-run guide & troubleshooting
-└── README.md
-```
+| Patient workspace · Grad-CAM++ | Printable diagnosis report |
+|---|---|
+| ![Grad-CAM++ in the patient workspace](docs/images/v2/gradcam.jpg) | ![Diagnosis report](docs/images/v2/report.jpg) |
+| **FSL tissue biomarkers** | **PubMed-grounded assistant** |
+| ![Biomarkers](docs/images/v2/biomarkers.jpg) | ![Assistant](docs/images/v2/assistant.jpg) |
 
 ---
 
-## 🚀 Installation
+## What's inside
 
-### Prerequisites
-- **Node.js** 18+ and **npm**
-- **Python** 3.12 (recommended for TensorFlow wheels on macOS arm64 / Linux)
-- **FSL** (FMRIB Software Library) — optional, only for biomarker analysis; auto-detected from `~/fsl`. Install per the [official docs](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation).
-- **No database to install** — an in-memory MongoDB starts automatically (set `MONGO_URI` for persistence).
+| Layer | What it does |
+|---|---|
+| **Classifier** | VGG-19 (ImageNet transfer learning) + dense head (256 → 128 → softmax) on 128 × 128 axial slices; binary decision, Demented vs Non-demented. |
+| **Explainability** | Grad-CAM++ on `block5_conv4`, computed on the pre-softmax **log-odds** of the predicted class (softmax gradients vanish on confident predictions), rendered as an adjustable overlay. |
+| **Tissue biomarkers** | FSL BET + FAST (3-class, T1) with partial-volume-weighted tissue amounts: CSF / grey / white-matter fractions, GM:WM ratio and parenchymal fraction for 2D slices, plus volumes for 3D NIfTI uploads. |
+| **RAG** | 513 PubMed/MEDLINE abstracts (NCBI E-utilities) in a persisted ChromaDB index with cosine retrieval and an out-of-domain refusal floor, used by both the report rationale and the assistant. `eval_rag.py` checks retrieval relevance, citation and refusal (9/9). |
+| **Clinical rationale** | GPT-4o writes a structured interpretation — impression, classifier and Grad-CAM++ interpretation, tissue biomarkers vs Alzheimer's atrophy patterns, risk profile, a synthesis of 5 retrieved PubMed abstracts with [n] citations, differential diagnosis and recommended work-up. |
+| **Assistant** | GPT-4o chat with conversation memory, image attachments and PubMed grounding; conversations are stored in MongoDB per patient. |
+| **Caching** | Deterministic outputs (classification, Grad-CAM++, FSL, full report, repeated questions) are cached by input hash — Redis when `REDIS_URL` is set, else in-process. A repeat request drops from ~4 s to a few ms. |
+| **Input guard** | A deterministic plausibility filter (greyscale, dark background, tissue present) rejects photos and screenshots before the model runs. |
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/malharinamdar/vaidya-nidaan.git
-cd vaidya-nidaan
-```
+### Data and training
 
-### 2. Backend — Node.js API gateway
-```bash
-cd website/backend
-npm install
-cp .env.example .env          # defaults work out of the box
-```
-
-### 3. Frontend — React + Vite
-```bash
-cd ../frontend
-npm install
-```
-
-### 4. ML service — Python Flask (VGG-19 · Grad-CAM++ · FSL · GPT-4o)
-```bash
-cd ../../ml_service
-python3.12 -m venv .venv
-./.venv/bin/python -m pip install -r requirements.txt
-cp .env.example .env          # then add your HF_TOKEN and OPENAI_API_KEY
-```
+- **Data:** OASIS-1 cross-sectional MRI — axial T1 slices from 347 subjects (81 with CDR ≥ 0.5, 266 with CDR 0).
+- **Notebooks:** [`final_alzheimer_model.ipynb`](research/notebooks/final_alzheimer_model.ipynb) trains the current model;
+  [`alzheimer_model_v2.ipynb`](research/notebooks/alzheimer_model_v2.ipynb) is the v2 pipeline — patient-level train/val/test split,
+  class weights over the full 86k-slice imagesOASIS set, ImageNet preprocessing, block5 fine-tuning with augmentation, and
+  slice- plus patient-level evaluation. [`report.ipynb`](research/notebooks/report.ipynb) prototypes the FSL biomarker report.
 
 ---
 
-## ⚙️ Configuration
+## Architecture
 
-**`website/backend/.env`**
-```ini
-PORT=5005
-JWT_SECRET=change_me
-# Leave empty to use an automatic in-memory MongoDB; set a mongodb:// URI to persist data.
-MONGO_URI=
-```
-
-**`ml_service/.env`**
-```ini
-PORT=5001
-
-# Trained VGG-19 model — downloaded from a (private) Hugging Face repo on first use.
-HF_TOKEN=hf_xxx                 # needs READ access to the model repo
-ALZHEIMER_MODEL_REPO=malharinamdar/alzheimer-prediction-model
-ALZHEIMER_MODEL_FILE=alzheimer_model.h5
-MODEL_PREPROCESS=raw            # matches how the model was trained (0–255 pixels)
-
-# FSL biomarker analysis (auto-detected from ~/fsl if left blank)
-FSLDIR=
-
-# Multilingual GPT-4 chatbot + clinical rationale
-OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL=gpt-4o             # vision-capable (handles MRI image questions)
-```
-
-> The frontend talks to the backend (`:5005`) and ML service (`:5001`) by default;
-> override with `VITE_API_BASE` / `VITE_ML_BASE` in `website/frontend/.env` if needed.
-> If `HF_TOKEN` cannot read the model repo, the classifier transparently falls back to a
-> deterministic stand-in so the pipeline still runs — `GET /health` reports which backend is active.
-
----
-
-## 💻 Running the Application
-
-**One command (from the repo root):**
-```bash
-./start-all.sh
-```
-
-**…or run each service in its own terminal:**
-```bash
-# Terminal 1 — ML service
-cd ml_service && ./.venv/bin/python app.py
-
-# Terminal 2 — Backend API gateway
-cd website/backend && npm start
-
-# Terminal 3 — Frontend
-cd website/frontend && npm run dev
-```
-
-| Service   | URL                     |
-|-----------|-------------------------|
-| Frontend  | `http://localhost:5173` |
-| Backend   | `http://localhost:5005` |
-| ML service| `http://localhost:5001` |
-
-Open **http://localhost:5173**, sign up as a doctor, log in, add a patient, then open the patient
-profile to use **Detect Alzheimer's**, **Grad-CAM Analysis**, **Biomarker Analysis**, **Full Diagnosis
-Report**, and **Chat with AI**.
-
-See [RUN_LOCAL.md](RUN_LOCAL.md) for a deeper guide and troubleshooting.
-
----
-
-## 🛠️ Usage Examples
-
-### 1. Authenticate
-```bash
-# Register a doctor
-curl -X POST http://localhost:5005/api/doctors/signup \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Dr Test","email":"dr@test.com","password":"pass123","specialty":"Neurologist"}'
-
-# Log in and capture the JWT
-TOKEN=$(curl -s -X POST http://localhost:5005/api/doctors/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"dr@test.com","password":"pass123"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
-```
-
-### 2. Alzheimer's classification (VGG-19)
-```bash
-curl -X POST http://localhost:5001/prediction -F "file=@docs/samples/MRI_blackandwhite.png"
-```
-```json
-{
-  "prediction": {
-    "prediction": "Non Demented",
-    "alzheimer_probability": 1.03,
-    "per_class": {
-      "Non Demented": 98.97,
-      "Very mild Dementia": 0.0,
-      "Mild Dementia": 0.0,
-      "Moderate Dementia": 1.03
-    },
-    "message": "Predicted class: Non Demented (trained model)."
-  }
-}
-```
-
-### 3. Grad-CAM++ explainability
-```bash
-curl -X POST http://localhost:5001/gradcam -F "file=@docs/samples/MRI_blackandwhite.png"
-# -> { "gradCamResult": "data:image/png;base64,…", "mriUrl": "data:image/png;base64,…" }
-```
-
-### 4. FSL biomarker analysis
-```bash
-curl -X POST http://localhost:5001/report -F "file=@docs/samples/MRI_blackandwhite.png"
-```
-```json
-{
-  "source": "FSL (BET + FAST)",
-  "biomarkers": {
-    "brain_volume_mm3": 1402624.0,
-    "csf_fraction_pct": 29.31,
-    "grey_matter_fraction_pct": 34.57,
-    "white_matter_fraction_pct": 36.12,
-    "gm_wm_ratio": 0.957,
-    "brain_parenchymal_fraction_pct": 70.69
-  },
-  "report": "🏥 MRI Biomarker Analysis Report ..."
-}
-```
-
-### 5. Full structured diagnosis report (prediction + Grad-CAM++ + biomarkers + LLM rationale)
-```bash
-curl -X POST http://localhost:5001/api/patients/<patientId>/diagnosis \
-  -F "file=@docs/samples/MRI_blackandwhite.png" \
-  -F 'patient={"name":"John Doe","age":72,"gender":"Male"}'
-```
-```json
-{
-  "prediction": { "prediction": "Non Demented", "alzheimer_probability": 1.03, "per_class": { "...": "..." } },
-  "gradcam": { "gradCamResult": "data:image/png;base64,…", "mriUrl": "data:image/png;base64,…" },
-  "biomarker_source": "FSL (BET + FAST)",
-  "biomarkers": { "grey_matter_fraction_pct": 34.57, "gm_wm_ratio": 0.957, "csf_fraction_pct": 29.31 },
-  "rationale": "### Model Prediction\nThe VGG-19 classifier predicts 'Non Demented' (98.97%)… the grey-matter fraction and GM:WM ratio are consistent with preserved cortical tissue…",
-  "report": "VAIDYA NIDAAN — STRUCTURED MEDICAL DIAGNOSIS REPORT …",
-  "classifier_backend": "tensorflow"
-}
-```
-
-### 6. Multilingual chatbot
-```bash
-# Text question
-curl -X POST http://localhost:5001/api/query2 -F "text=What is the hippocampus?"
-# Image + question (GPT-4o vision)
-curl -X POST http://localhost:5001/api/query1 \
-  -F "text=Analyse this brain MRI." -F "file=@docs/samples/MRI_blackandwhite.png"
-# -> { "message": "This is a sagittal MRI view of the brain… (observational analysis)" }
-```
-
-#### Sample Inputs & Outputs
-
-**Input MRI Scan**
-
-![MRI Input Sample](docs/samples/MRI_blackandwhite.png)
-
-**Grad-CAM Heatmap**
-
-![Heatmap Overlay](docs/images/grm.png)
-
-**Chatbot Interface**
-
-![Multilingual Chatbot](docs/images/cb.jpeg)
-
----
-
-## 🔧 System Architecture
-
-![Architecture Diagram](docs/images/arc.jpeg)
 ```mermaid
 flowchart LR
-  subgraph Frontend/UI
-    U[User Interface]
+  subgraph Browser
+    UI[React + Vite SPA]
   end
-  U -->|Upload Scan| A[Node.js API]
-  A -->|Invoke ML| B[VGG-19 & Grad-CAM]
-  A -->|Invoke FSL| C[FSL Service]
-  B --> D[Heatmap Image]
-  C --> E[Biomarker Report]
-  D & E --> F[Cloudinary]
-  F --> G[Accessible URLs]
-  G --> U
-  U -->|Chat Query| H[GPT-4-turbo Chatbot]
-  H --> U
-```  
+  UI -- JWT --> API[Node/Express API<br/>auth · patients · reports]
+  API --> DB[(MongoDB Atlas)]
+  UI -- same JWT --> ML[Flask ML service]
+  ML --> CLS[VGG-19 classifier]
+  ML --> CAM[Grad-CAM++]
+  ML --> FSL[FSL BET + FAST]
+  ML --> RAG[(Chroma · 513 PubMed abstracts)]
+  ML --> LLM[GPT-4o rationale + assistant]
+```
 
----
+- **Frontend** — React 18, Vite, Tailwind v4, Framer Motion. It has one patient workspace (upload a scan once; every tab reuses it) and a print-to-PDF report view.
+- **API gateway** — Express + Mongoose. It handles JWT auth (a Bearer token in localStorage), patient CRUD, saved reports, and a one-click shared demo workspace (`DEMO_MODE`).
+- **ML service** — Flask on [Modal](https://modal.com) (scale-to-zero). Every POST route verifies the gateway's JWT and is rate-limited per caller.
+- **Hosting** — frontend and API on Vercel, database on MongoDB Atlas.
 
-## 📄 License
+## Run locally
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+Prerequisites: Node 18+, Python 3.12, and optionally [FSL](https://fsl.fmrib.ox.ac.uk/fsl/docs/#/install/index) (auto-detected at `~/fsl`; without it, biomarkers fall back to image statistics).
 
----
-## 📬 Contact
+```bash
+git clone https://github.com/malharinamdar/vaidya-nidaan.git && cd vaidya-nidaan
 
-**Team MarkerMinds AI**
+# API gateway
+cd website/backend && npm install && cp .env.example .env   # set JWT_SECRET; MONGO_URI optional
+npm run init-db                                              # indexes + demo workspace (needs MONGO_URI)
 
-**Team Members:**
-- Malhar Inamdar (Maintainer of this repo) – <malhar.inamdar.097@gmail.com>  
-- Manorama Mudgal  
-- Vedant Joshi  
-- Prajwal Mandlecha  
-- Aditya Bhalgat  
+# Frontend
+cd ../frontend && npm install
 
-🌐 Web: [malharinamdar.github.io](https://malharinamdar.github.io)
+# ML service
+cd ../../ml_service && python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+cp .env.example .env   # set ALZHEIMER_MODEL_PATH (or HF_TOKEN), OPENAI_API_KEY, and the SAME JWT_SECRET
+
+cd .. && ./start-all.sh   # frontend :5173 · API :5005 · ML :5001
+```
+
+With `MONGO_URI` empty, the API starts an in-memory MongoDB (nothing is persisted). Open http://localhost:5173 and click **Try the demo**.
+
+## Repository
+
+```text
+website/frontend   React SPA (pages/, components/, lib/)
+website/backend    Express API (app.js, routes/, models/, lib/, api/index.js for Vercel)
+ml_service         Flask ML service (app.py, inference.py, report.py, diagnosis.py,
+                   chatbot.py, medical_rag.py, security.py, mri_check.py, modal_app.py)
+research           Training notebooks (v1, v2), FSL report notebook, Grad-CAM++ and FSL scripts
+docs               Screenshots, sample scans, architecture diagrams
+```
+
+## Team
+
+**Team MarkerMinds** — Malhar Inamdar (maintainer · [malharinamdar.github.io](https://malharinamdar.github.io)), Manorama Mudgal, Vedant Joshi, Prajwal Mandlecha, Aditya Bhalgat.

@@ -11,6 +11,7 @@ Mirrors ``research/scripts/gradcam_plus_plus.py`` /
 import io
 import os
 import base64
+import threading
 
 import numpy as np
 from PIL import Image
@@ -18,9 +19,11 @@ from PIL import Image
 import config
 from config import DEMENTIA_CLASSES
 
-# Trained TensorFlow model (loaded lazily, once).
+# Trained TensorFlow model (loaded lazily, once). TF inference and Grad-CAM gradients run
+# under one lock so concurrent requests in the same container don't interleave.
 _tf = None
 _model = None
+_tf_lock = threading.RLock()
 
 
 def _load_model():
@@ -28,6 +31,14 @@ def _load_model():
     global _tf, _model
     if _model is not None:
         return _model
+    with _tf_lock:
+        if _model is None:
+            _load_model_unlocked()
+    return _model
+
+
+def _load_model_unlocked():
+    global _tf, _model
     model_path = config.resolve_model_path()
     if not model_path:
         raise RuntimeError(
@@ -153,8 +164,9 @@ def classify(file_bytes):
     model = _load_model()
     side = _model_side(model)
     img = load_image(file_bytes, size=(side, side))
-    arr = _model_input(model, img)
-    preds = model.predict(arr, verbose=0)[0]
+    with _tf_lock:
+        arr = _model_input(model, img)
+        preds = model.predict(arr, verbose=0)[0]
     probs = np.asarray(preds, dtype=np.float64)
     p_non = float(probs[0])                      # neuron 0 = Non Demented (trained)
     p_dem = float(1.0 - p_non)                   # all remaining mass = Demented
@@ -175,51 +187,70 @@ def _jet_colormap(gray01):
     return (np.stack([r, g, b], axis=-1) * 255).astype(np.uint8)
 
 
-def _tf_gradcam_pp(model, img: Image.Image):
-    """Real Grad-CAM++ on the last conv layer of the trained model."""
-    tf = _tf
-    side = _model_side(model)
-    if img.size != (side, side):
-        img = img.resize((side, side))
-    arr = _model_input(model, img)
-    # Prefer the configured layer (VGG-19 last conv block); else find the last conv layer.
-    conv_layer = None
+def _find_conv_layer(model):
+    """The configured Grad-CAM layer (VGG-19 block5_conv4), else the last 4-D layer."""
     if config.GRADCAM_LAYER:
         try:
             model.get_layer(config.GRADCAM_LAYER)
-            conv_layer = config.GRADCAM_LAYER
+            return config.GRADCAM_LAYER
         except Exception:
-            conv_layer = None
-    if conv_layer is None:
-        for layer in reversed(model.layers):
-            try:
-                if len(layer.output.shape) == 4:
-                    conv_layer = layer.name
-                    break
-            except Exception:
-                continue
-    if conv_layer is None:
-        raise RuntimeError("No 4-D convolutional layer found for Grad-CAM++.")
-    # Build a model exposing (conv activations, predictions).
-    grad_model = tf.keras.models.Model(model.inputs, [model.get_layer(conv_layer).output, model.output])
+            pass
+    for layer in reversed(model.layers):
+        try:
+            if len(layer.output.shape) == 4:
+                return layer.name
+        except Exception:
+            continue
+    raise RuntimeError("No 4-D convolutional layer found for Grad-CAM++.")
+
+
+def _target_neuron(probs):
+    """Output neuron to explain, consistent with the binary decision in classify():
+    neuron 0 when Non Demented wins, else the strongest of the remaining (Demented) neurons."""
+    probs = np.asarray(probs, dtype=np.float64)
+    if probs[0] >= 0.5:
+        return 0
+    return 1 + int(np.argmax(probs[1:]))
+
+
+def _tf_gradcam_pp(model, file_bytes):
+    """Real Grad-CAM++ on the last conv layer of the trained model.
+
+    Target = the BINARY LOG-ODDS of the predicted class,
+        log p(Non Demented) / p(Demented) = z_0 - logsumexp(z_1..z_n)   (sign flipped for Demented),
+    computed from the pre-softmax logits. Two reasons:
+      * the softmax output saturates on confident predictions (p ~ 1.0 gives dp/dA ~ p(1-p):
+        max |grad| was 5e-8 on the demented sample), making the map numerically fragile;
+      * a single raw logit also rewards evidence that raises BOTH classes; the log-odds only
+        counts evidence that separates the two, i.e. what actually drove the decision.
+
+    The model sees exactly the input classify() sees (original -> side x side).
+    Returns (cam in [0,1] at side x side, target neuron index).
+    """
+    tf = _tf
+    side = _model_side(model)
+    arr = _model_input(model, load_image(file_bytes, size=(side, side)))
+    conv_layer = _find_conv_layer(model)
+    head = model.layers[-1]                         # final Dense (softmax activation)
+    kernel, bias = head.get_weights()
+    grad_model = tf.keras.models.Model(model.inputs, [model.get_layer(conv_layer).output, head.input])
     arr_t = tf.convert_to_tensor(arr, dtype=tf.float32)
     with tf.GradientTape() as tape:
-        tape.watch(arr_t)
         outputs = grad_model(arr_t)
-        conv_out, preds = outputs[0], outputs[1]
+        conv_out, penult = outputs[0], outputs[1]
         if isinstance(conv_out, (list, tuple)):
             conv_out = conv_out[0]
-        if isinstance(preds, (list, tuple)):
-            preds = preds[0]
-        class_idx = tf.argmax(preds[0])
-        loss = preds[:, class_idx]
-    grads = tape.gradient(loss, conv_out)
+        if isinstance(penult, (list, tuple)):
+            penult = penult[0]
+        logits = tf.matmul(penult, kernel) + bias   # (1, n_classes), pre-softmax
+        target = _target_neuron(tf.nn.softmax(logits)[0].numpy())
+        log_odds_non = logits[:, 0] - tf.reduce_logsumexp(logits[:, 1:], axis=1)
+        score = log_odds_non if target == 0 else -log_odds_non
+    grads = tape.gradient(score, conv_out)
     if grads is None:
         raise RuntimeError("Grad-CAM++ gradient computation returned None.")
-    # Drop the batch axis and work on the single-image maps, so every spatial
-    # reduction below is over (H, W) PER CHANNEL — the correct Grad-CAM++ form.
-    # (A previous version reduced over axis=(0,1) on a (1,H,W,C) tensor, i.e. over
-    #  (batch, H), leaking a spurious width dependence into the channel weights.)
+    # Drop the batch axis so every spatial reduction below is over (H, W) PER CHANNEL.
+    # (An earlier version reduced over axis=(0,1) of a (1,H,W,C) tensor, i.e. (batch, H).)
     conv = conv_out[0]                 # (H, W, C)
     grad = grads[0]                    # (H, W, C)
     grad2 = grad * grad
@@ -230,26 +261,63 @@ def _tf_gradcam_pp(model, img: Image.Image):
     denom = tf.where(denom != 0.0, denom, tf.ones_like(denom))
     alphas = grad2 / denom             # alpha_ij^kc, (H, W, C)
     alphas /= tf.reduce_sum(alphas, axis=(0, 1)) + 1e-8   # normalise per channel over (H, W)
-    # Channel weights w_k = sum_{ij} alpha_ij^k * relu(dY^c / dA_ij^k)  -> (C,)
+    # Channel weights w_k = sum_{ij} alpha_ij^k * relu(dS^c / dA_ij^k)  -> (C,)
     weights = tf.reduce_sum(alphas * tf.maximum(grad, 0.0), axis=(0, 1))
     cam = tf.reduce_sum(weights * conv, axis=-1)          # (H, W)
     cam = tf.maximum(cam, 0)
     cam = cam / (tf.reduce_max(cam) + 1e-8)
     cam = tf.image.resize(cam[..., tf.newaxis], (side, side)).numpy().squeeze()
-    return cam
+    return cam, target
+
+
+def _display_image(file_bytes, max_side=512):
+    """The upload at its ORIGINAL aspect ratio (longest side = max_side), for display."""
+    img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+    scale = max_side / max(img.size)
+    return img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))))
 
 
 def grad_cam(file_bytes, alpha=0.5):
-    """Return (overlay_data_url, original_data_url) — Grad-CAM++ on the trained model."""
-    img = load_image(file_bytes)
-    model = _load_model()
-    cam = _tf_gradcam_pp(model, img)
+    """Grad-CAM++ on the trained model.
 
-    # Resize the activation map to the display image size before colouring/overlaying.
-    cam_img = Image.fromarray((np.clip(cam, 0, 1) * 255).astype(np.uint8)).resize(img.size)
-    cam = np.asarray(cam_img, dtype=np.float64) / 255.0
+    Returns a dict with data-URL PNGs (``overlay`` blended at ``alpha``, ``original``,
+    and a transparent ``heatmap`` layer the UI can blend at any opacity) plus
+    ``tissue_attribution_pct``: the share of the attribution mass that falls on
+    non-background pixels (a sanity check that the map isn't lighting up empty space).
+    """
+    model = _load_model()
+    with _tf_lock:
+        cam, target = _tf_gradcam_pp(model, file_bytes)
+    img = _display_image(file_bytes)
+    # The model saw a square resize of the upload, so stretching the map back to the
+    # original aspect is the exact inverse of that resize.
+    cam = np.asarray(
+        Image.fromarray((np.clip(cam, 0, 1) * 255).astype(np.uint8)).resize(img.size, Image.BILINEAR),
+        dtype=np.float64,
+    ) / 255.0
     heat_rgb = _jet_colormap(cam)
     base = np.asarray(img, dtype=np.float64)
     overlay = (base * (1 - alpha) + heat_rgb * alpha).clip(0, 255).astype(np.uint8)
-    overlay_img = Image.fromarray(overlay)
-    return _to_data_url(overlay_img), _to_data_url(img)
+    heat_rgba = np.dstack([heat_rgb, (np.clip(cam, 0, 1) ** 0.8 * 255).astype(np.uint8)])
+
+    gray = base.mean(axis=2) / 255.0
+    tissue = gray > 0.08
+    mass = float(cam.sum())
+    tissue_pct = round(float((cam * tissue).sum()) / mass * 100, 1) if mass > 0 else None
+    # Where the map concentrates, in IMAGE coordinates (anatomical orientation depends on the scan).
+    hot = cam >= 0.5
+    hot_area_pct = round(float(hot.mean()) * 100, 1)
+    py, px = np.unravel_index(int(np.argmax(cam)), cam.shape)
+    rows = ["upper", "central", "lower"][min(2, int(3 * py / cam.shape[0]))]
+    cols = ["left", "central", "right"][min(2, int(3 * px / cam.shape[1]))]
+    peak_region = "centre" if rows == cols == "central" else f"{rows}-{cols}".replace("central-", "mid-")
+    return {
+        "overlay": _to_data_url(Image.fromarray(overlay)),
+        "original": _to_data_url(img),
+        "heatmap": _to_data_url(Image.fromarray(heat_rgba, mode="RGBA")),
+        "target_neuron": int(target),
+        "layer": _find_conv_layer(model),
+        "tissue_attribution_pct": tissue_pct,
+        "hot_area_pct": hot_area_pct,          # share of the image with >= 50% of peak attribution
+        "peak_region": peak_region,            # image-relative location of the strongest attribution
+    }

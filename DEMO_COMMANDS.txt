@@ -1,9 +1,9 @@
 ╔══════════════════════════════════════════════════════════════════════╗
 ║  VAIDYA NIDAAN — COMMAND SHEET                         ║
-║  Keep this file open in a tab during the interview.                  ║
+║  Commands to run, check and demo the full stack.                     ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
-WHAT THE SYSTEM IS (say this in one breath):
+WHAT THE SYSTEM IS:
   A 3-service Alzheimer's decision-support app:
     React frontend (:5173)  ->  Node/Express + MongoDB gateway (:5005, auth + patients)
                             ->  Python/Flask ML service (:5001)
@@ -27,33 +27,37 @@ lsof -ti tcp:5001 tcp:5005 tcp:5173 | xargs kill -9 2>/dev/null
 1.  HEALTH CHECK  (proves the REAL components are live, no fallbacks)
 ──────────────────────────────────────────────────────────────────────
 curl -s http://localhost:5001/health
-#  MUST show:  "classifier_backend":"tensorflow"   (NOT "numpy-fallback")
-#              "fsl_available":true ,  "openai_enabled":true
+#  MUST show:  "classifier_backend":"tensorflow" , "fsl_available":true ,
+#              "openai_enabled":true , "auth_required":true
 curl -s http://localhost:5005/health
 
+
+LIVE (no setup):  https://vaidya-nidaan.vercel.app  ->  "Try the demo"
+  (ML service scales to zero: the first analysis after idle takes ~10-15 s)
 
 ──────────────────────────────────────────────────────────────────────
 2.  THE WEB DEMO  (main flow — open http://localhost:5173)
 ──────────────────────────────────────────────────────────────────────
-  - Sign up as a doctor (name / email / password / specialty), or log in.
-  - Dashboard  ->  Add Patient  ->  fill details  ->  Submit
-  - Open the patient  ->  View Profile,  then show in this order:
+  - Landing page  ->  "Try the demo"  (one click, no sign-up; fictional patients)
+    (or Sign in / Create account for your own workspace)
+  - Patients  ->  open "Sunita Rao"  ->  the patient WORKSPACE:
+       left  = MRI scan panel (upload ONCE — drag-drop, browse, paste, or a sample chip)
+       right = tabs that all reuse that scan:
 
-     1) Detect Alzheimer's   -> upload  docs/samples/axial_demented_sample.jpg
-                                        (=> Dementia)
-                             -> then    docs/samples/axial_nondemented_sample.jpg
-                                        (=> Non Demented)
-     2) Grad-CAM Analysis    -> same axial image (clean, brain-focused heatmap)
-     3) Biomarker Analysis   -> FSL BET + FAST tissue fractions (GM/WM/CSF, GM:WM)
-     4) Full Diagnosis Report-> prediction + Grad-CAM++ + biomarkers
-                                + RAG-grounded rationale citing [1][2]
-                                + section 5 "Retrieved Literature" with links
-     5) Chat with AI         -> ask in Hindi/Marathi to show multilingual
+     1) Classification  -> sample "Demented (OASIS-1)"  => Dementia pattern, both class bars
+                        -> then "Non-demented (OASIS-1)" => No dementia pattern ~92% / ~8%
+     2) Grad-CAM++      -> interactive overlay + opacity slider + colour legend
+                           (target = binary log-odds; shows % of attribution on the head)
+     3) Biomarkers      -> FSL BET + FAST, single-slice composition (CSF / GM / WM, GM:WM)
+     4) Full report     -> "Generate report" (~20-60 s) -> opens the saved A4 report:
+                           impression, Grad-CAM++, tissue, GPT-4o rationale citing [n],
+                           PubMed references, sign-off  ->  "Print / Save PDF"
+     5) Assistant       -> patient-aware chat; ask in Hindi/Marathi; PubMed citation chips;
+                           History menu = saved conversations (MongoDB), "New chat"
 
-  USE THESE IMAGES (bundled):
+  USE THESE IMAGES (bundled as one-click sample chips in the scan panel):
      docs/samples/axial_demented_sample.jpg      <- positive case
      docs/samples/axial_nondemented_sample.jpg   <- negative case
-  (Avoid MRI_blackandwhite.png for Grad-CAM — it's a sagittal full-head view; see the Q&A dossier for why.)
 
 
 ──────────────────────────────────────────────────────────────────────
@@ -63,7 +67,7 @@ curl -s http://localhost:5005/health
 # Diagnosis Report page: prediction + biomarkers + Grad-CAM summary are grounded
 # in PubMed papers, the rationale cites [n], and §5 lists the papers with links.
 # >>> DEMO IT IN THE UI. <<<  The commands below are OPTIONAL headless checks only
-# (use only if an interviewer explicitly asks to see retrieval/refusal directly).
+# (useful for inspecting retrieval and refusal directly).
 
 cd ~/vaidya-nidaan
 
@@ -89,24 +93,28 @@ ml_service/.venv/bin/python ml_service/medical_rag.py --refresh
 ──────────────────────────────────────────────────────────────────────
 4.  RAW API CALLS  (if they want to see the service directly, not the UI)
 ──────────────────────────────────────────────────────────────────────
+# every ML route needs the gateway's JWT now — grab a demo token first:
+T=$(curl -s -X POST localhost:5005/api/doctors/demo | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 S=docs/samples/axial_demented_sample.jpg
-curl -s -X POST http://localhost:5001/prediction -F "file=@$S"
-curl -s -X POST http://localhost:5001/report     -F "file=@$S"     # FSL biomarkers
-curl -s -X POST http://localhost:5001/chat       -F "text=What is the hippocampus?"
-curl -s -X POST http://localhost:5001/diagnosis  -F "file=@$S"     # full report JSON
+curl -s -X POST http://localhost:5001/prediction -H "Authorization: Bearer $T" -F "file=@$S"
+curl -s -X POST http://localhost:5001/report     -H "Authorization: Bearer $T" -F "file=@$S"   # FSL biomarkers
+curl -s -X POST http://localhost:5001/chat       -H "Authorization: Bearer $T" -F "text=What is the hippocampus?"
+curl -s -X POST http://localhost:5001/diagnosis  -H "Authorization: Bearer $T" -F "file=@$S"   # full report JSON
 
 
 ──────────────────────────────────────────────────────────────────────
 5.  TROUBLESHOOTING
 ──────────────────────────────────────────────────────────────────────
-- /health shows "numpy-fallback"  -> model didn't load. Check that
-  ml_service/.env  ALZHEIMER_MODEL_PATH  points to
-  ml_service/models/alzheimer_model.h5 , then restart.
+- prediction fails "No trained Alzheimer model" -> check ml_service/.env
+  ALZHEIMER_MODEL_PATH points to ml_service/models/alzheimer_model.h5 , restart.
+- 401 from :5001                   -> JWT_SECRET differs between the two .env files.
 - "Address already in use"         -> free ports (step 0), re-run ./start-all.sh
 - TensorFlow error mentioning protobuf ->
   ml_service/.venv/bin/python -m pip install "protobuf==5.29.6"
 - FSL not found                    -> biomarker falls back to image-stats;
   ensure ~/fsl exists (fsl_available:true in /health).
-- Data resets on restart           -> in-memory Mongo is ephemeral (expected).
+- Data lives in MongoDB Atlas (db "vaidya_nidaan") — it persists across restarts.
 
   (Rotate the OpenAI key + HF token in the two .env files before sharing the repo.)
+
+

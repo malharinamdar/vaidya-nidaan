@@ -5,6 +5,7 @@
 
 # Python
 ml_service/.venv/
+ml_service/.modal-venv/
 **/__pycache__/
 *.pyc
 
@@ -30,6 +31,10 @@ advanced_mri_report.txt
 
 # Uploads
 website/backend/uploads/
+
+# Deploy tooling
+.vercel/
+**/.vercel/
 
 # Editor / tooling
 .claude/

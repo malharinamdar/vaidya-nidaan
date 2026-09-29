@@ -1,6 +1,6 @@
 # Vaidya Nidaan — Architecture Diagrams (Excalidraw)
 
-Two editable Excalidraw scenes for the interview walkthrough.
+Two editable Excalidraw scenes describing the system.
 
 ## How to open / edit
 1. Go to **https://excalidraw.com**
@@ -18,7 +18,3 @@ Two editable Excalidraw scenes for the interview walkthrough.
   Diagnosis Report is orchestrated across the 4 pipelines (Classifier, Grad-CAM++,
   FSL biomarkers, RAG), the RAG pipeline in detail (PubMed → Chroma → retrieve →
   guardrail → grounded gpt-4o), the chatbot, guardrails, and external deps.
-
-## Interview framing
-For every box, be ready to answer **"why does this layer exist, and what breaks if
-you remove it?"** — that was the core of the Atlan technical round.

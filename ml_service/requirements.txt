@@ -4,6 +4,7 @@
 # --- Web service (always required) -------------------------------------------
 Flask==3.0.3
 flask-cors==5.0.0
+gunicorn>=22.0              # production WSGI server (Modal / Docker)
 numpy>=1.26,<2.2
 Pillow>=10.0
 requests>=2.31
@@ -11,10 +12,18 @@ python-dotenv>=1.0
 
 # --- Real Alzheimer model (VGG-19) + Grad-CAM++ ------------------------------
 tensorflow==2.19.0          # loads alzheimer_model.h5 and runs Grad-CAM++
+keras==3.14.1               # the version the saved model was verified with
+protobuf==5.29.6            # pin: chromadb pulls protobuf 7, which breaks TF 2.19
 huggingface_hub>=0.24       # downloads the trained model from the private HF repo
 
-# --- FSL biomarker report (volumetric inputs) --------------------------------
+# --- FSL biomarker report -----------------------------------------------------
 nibabel>=5.2                # NIfTI / Analyze (.nii/.img) handling
 
-# --- Multilingual GPT-4 chatbot ----------------------------------------------
-openai>=1.40
+# --- Literature RAG (report rationale + assistant) ---------------------------
+chromadb==1.5.9             # persisted vector store over PubMed/MEDLINE abstracts
+
+# --- Multilingual GPT-4o assistant + clinical rationale ----------------------
+openai>=1.40,<3             # tested with 2.x
+
+# --- Optional response cache (used only when REDIS_URL is set) ---------------
+redis>=5.0

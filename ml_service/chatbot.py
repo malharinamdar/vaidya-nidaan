@@ -1,8 +1,9 @@
 """Multilingual medical assistant chatbot.
 
-Uses OpenAI GPT-4o (vision-capable, mirrors ``research/notebooks/chatbot_rag.ipynb``) when
-``OPENAI_API_KEY`` is configured. Otherwise an offline, rule-based assistant
-answers locally so the chat feature works without any external service or key.
+Uses OpenAI GPT-4o (vision-capable) when ``OPENAI_API_KEY`` is configured, with the
+conversation history and -- for text questions -- PubMed abstracts retrieved from the
+same Chroma store as the report (``medical_rag.py``), cited as [n]. Otherwise an
+offline, rule-based assistant answers locally so the chat works without any key.
 """
 import base64
 import re
@@ -84,26 +85,43 @@ def _offline_answer(text, has_image):
 
 
 RATIONALE_SYSTEM = (
-    "You are a clinical decision-support assistant for neurologists. You are given a VGG-19 "
-    "Alzheimer's MRI classifier output, a Grad-CAM++ explainability summary, FSL-derived brain "
-    "biomarkers, and (optionally) numbered excerpts from the medical literature. Write a concise, "
-    "structured clinical rationale interpreting these together, under clear plain-text headings. "
-    "Do NOT use Markdown formatting -- no asterisks or bold (**), no underscores, no hash (#) "
-    "symbols; write each heading as plain words on its own line.\n"
-    "Follow these rules strictly:\n"
-    "- The biomarkers are computed from a SINGLE 2D MRI slice expanded into a pseudo-volume, so the "
-    "absolute volumes are only approximate and just the tissue fractions/ratios are indicative. Say "
-    "this explicitly and do NOT over-interpret the numbers as definitive atrophy.\n"
-    "- You are given only a short TEXT note about the Grad-CAM++ heatmap, NOT the image itself. Do "
-    "NOT claim the model's spatial focus was appropriate, correct, or on-target, and do NOT infer "
-    "that from the absence of a warning. State that the heatmap's anatomical location must be "
-    "reviewed visually by the clinician before the attribution is trusted.\n"
-    "- The provided LITERATURE is topically-related reference material for the clinician, NOT proof of "
-    "any patient-specific finding. You may point to it as related reading (e.g. 'see related literature "
-    "[1]-[3]'), but do NOT assert that it supports or confirms the prediction or biomarkers, and do NOT "
-    "fabricate citations.\n"
-    "- Be objective, avoid overstating certainty, and end with an explicit reminder that this is "
-    "decision support, not a diagnosis, and must be confirmed by a qualified clinician."
+    "You are an experienced neuroradiology decision-support assistant writing for a neurologist. You receive a "
+    "VGG-19 Alzheimer's MRI classifier output, a Grad-CAM++ summary, FSL tissue biomarkers for the uploaded scan, "
+    "the patient's details and clinical notes, and numbered PubMed/MEDLINE abstracts. Write an elaborate, clinically "
+    "useful rationale (roughly 400-550 words) that INTERPRETS the findings -- do not just restate the numbers.\n\n"
+    "Format: plain text, no Markdown symbols (no asterisks, underscores or #). Put each heading on its own line, "
+    "then short paragraphs or '- ' bullet points. Use exactly these headings:\n"
+    "Clinical impression -- 2-3 sentences integrating everything into one overall picture and how much weight it deserves.\n"
+    "Classifier interpretation -- what the probability and its margin from the 50% threshold mean, and how "
+    "much it should move the clinician's estimate given it is a single-slice model trained on OASIS-1.\n"
+    "Explainability -- interpret the Grad-CAM++ pattern (focal vs diffuse, share within the head, peak location in "
+    "image coordinates); explain what a clinically meaningful attribution would look like (medial temporal lobes, "
+    "hippocampi, ventricles, cortical sulci) and what the clinician should check when viewing the overlay.\n"
+    "Tissue biomarkers -- interpret the CSF, grey-matter and white-matter fractions, GM:WM ratio and parenchymal "
+    "fraction against typical Alzheimer's atrophy patterns (grey-matter loss, CSF and ventricular expansion); state "
+    "whether they agree or disagree with the classifier, and what would strengthen the measurement.\n"
+    "Risk profile -- relate age, sex, smoking, alcohol, neurological history and any clinical notes (e.g. MMSE/MoCA "
+    "scores, symptoms) to the findings.\n"
+    "Evidence from the literature -- synthesise what the retrieved abstracts actually report that is relevant here "
+    "(specific findings, markers, effect directions), citing each claim with [n].\n"
+    "Differential considerations -- as bullets: Alzheimer's disease vs normal ageing, vascular cognitive impairment, "
+    "frontotemporal dementia, Lewy body dementia, normal-pressure hydrocephalus or others as relevant, each with "
+    "what in this case supports or argues against it.\n"
+    "Recommended next steps -- as bullets: specific, actionable work-up (cognitive testing such as MoCA/MMSE/ACE-III, "
+    "reversible-cause labs such as B12, folate and TSH, dedicated 3D T1 MRI with coronal hippocampal views and MTA "
+    "rating, FLAIR for white-matter disease, amyloid/tau PET or CSF biomarkers where appropriate, follow-up interval).\n\n"
+    "Accuracy rules (follow silently, without adding disclaimers):\n"
+    "- Refer to the model's decision as a classification or pattern; do not state the patient has dementia.\n"
+    "- You only receive a text summary of the heatmap, never the image: do not claim it lies on a named brain structure, "
+    "and note that the head outline also contains skull, scalp and orbits, so a share 'within the head' does not show "
+    "the evidence is in brain tissue.\n"
+    "- Only describe something as absent (e.g. no ventricular enlargement, no white-matter disease) if the provided data "
+    "actually measure it; otherwise say it has not been assessed. Do not call single-slice fractions 'normal' -- there "
+    "are no reference ranges for them; compare them directionally.\n"
+    "- For a 2D upload the tissue values describe the imaged slice, which depends on slice level; interpret "
+    "them directionally rather than as whole-brain volumes.\n"
+    "- Cite only the numbered abstracts provided and never invent studies or numbers; general clinical knowledge "
+    "(e.g. standard work-up, typical atrophy patterns) may be used without citation."
 )
 
 
@@ -119,11 +137,15 @@ def _strip_markdown(text):
     return "\n".join(re.sub(r"^\s{0,3}#{1,6}\s+", "", ln) for ln in text.split("\n"))
 
 
-def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=None, literature=None):
+def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=None, literature=None,
+                       native_volume=False):
     """Generate an LLM clinical rationale from the prediction + biomarkers (+ retrieved literature).
 
+    Returns ``(text, source)`` where source is "llm" or "offline" (fallback summary).
+
     ``literature`` is an optional pre-formatted, numbered block of paper excerpts from the RAG
-    retriever; when present the model grounds its literature claims in it and cites them [n].
+    retriever; when present the model may point to it as related reading (reference material for the
+    clinician, NOT proof of the patient-specific findings).
     """
     per_class = prediction.get("per_class", {})
     context = f"""MODEL PREDICTION (VGG-19 classifier):
@@ -135,17 +157,19 @@ def generate_rationale(prediction, biomarkers, patient=None, gradcam_summary=Non
 GRAD-CAM++ EXPLAINABILITY:
   {gradcam_summary or 'Heatmap generated over the last VGG-19 conv block (block5_conv4) highlighting the regions that most influenced the prediction.'}
 
-FSL BIOMARKERS (from a single 2D slice expanded to a pseudo-volume — absolute volumes approximate):
+FSL BIOMARKERS
+  MEASUREMENT: {"volumetric (native 3D scan)" if native_volume else "tissue composition of one 2D slice"}
 {_fmt_dict(biomarkers)}
 """
     if patient:
         context += "\nPATIENT CONTEXT:\n" + _fmt_dict(patient)
     if literature:
-        context += "\nLITERATURE (cite as [n] when you use it):\n" + literature
+        context += ("\nRELATED LITERATURE (topically-related reference reading only — you MAY point "
+                    "to it as related reading, but do NOT cite it as proof of the findings):\n" + literature)
 
     client = _get_client()
     if client is None:
-        return _offline_rationale(prediction, biomarkers, context)
+        return _offline_rationale(prediction, biomarkers, context), "offline"
 
     try:
         resp = client.chat.completions.create(
@@ -154,12 +178,13 @@ FSL BIOMARKERS (from a single 2D slice expanded to a pseudo-volume — absolute 
                 {"role": "system", "content": RATIONALE_SYSTEM},
                 {"role": "user", "content": context},
             ],
-            temperature=0,  # deterministic, reproducible rationale
+            temperature=0.2,  # near-deterministic, but allows a natural clinical narrative
+            max_tokens=1200,
         )
-        return _strip_markdown(resp.choices[0].message.content)
+        return _strip_markdown(resp.choices[0].message.content), "llm"
     except Exception as exc:  # network / quota / rate-limit -> clean offline fallback (no raw error in UI)
         print(f"[chatbot] rationale LLM unavailable ({exc}); using offline summary.")
-        return _offline_rationale(prediction, biomarkers, context)
+        return _offline_rationale(prediction, biomarkers, context), "offline"
 
 
 def _offline_rationale(prediction, biomarkers, context):
@@ -167,7 +192,7 @@ def _offline_rationale(prediction, biomarkers, context):
     csf = biomarkers.get("csf_fraction_pct")
     ratio = biomarkers.get("gm_wm_ratio")
     bits = [
-        "Clinical Rationale (offline summary — set OPENAI_API_KEY for the full LLM version):",
+        "Summary",
         f"- The classifier predicts '{prediction.get('prediction')}' with a dementia probability "
         f"of {prediction.get('alzheimer_probability')}%.",
     ]
@@ -177,15 +202,76 @@ def _offline_rationale(prediction, biomarkers, context):
             f"fraction / GM:WM ratio with a raised CSF fraction ({csf}%) would be consistent "
             "with cortical atrophy supporting a dementia prediction."
         )
-    bits.append("- This is decision support only and must be confirmed by a qualified clinician.")
+    bits.append("- Recommendation: correlate with cognitive testing and clinical review.")
     return "\n".join(bits)
 
 
-def answer(text, image_bytes=None, image_mime="image/png"):
-    """Return an assistant reply string for the given text (+ optional image)."""
+CHAT_RAG_NOTE = (
+    "LITERATURE: numbered PubMed/MEDLINE abstracts retrieved for the doctor's question are "
+    "provided below. When a statement is supported by them, cite it inline as [n]. If they do not "
+    "cover the question, answer from general medical knowledge and do not invent citations. "
+    "Never cite a number that is not in the list."
+)
+MAX_HISTORY_TURNS = 10
+
+
+def _retrieve_for_chat(question):
+    """RAG for the assistant: PubMed abstracts for the question, or [] if nothing relevant.
+
+    Uses the same Chroma store + distance floor as medical_rag.py. The embedder is an
+    English sentence model, so non-English questions usually fall past the floor and the
+    assistant simply answers without literature (it never cites what it didn't retrieve).
+    """
+    if not question or len(question.strip()) < 8:
+        return []
+    try:
+        import medical_rag
+
+        hits = medical_rag.retrieve(question, k=4)
+    except Exception as exc:  # store missing / import error -> answer without literature
+        print(f"[chatbot] retrieval unavailable ({exc})")
+        return []
+    return [h for h in hits if h["distance"] <= medical_rag.MAX_DISTANCE]
+
+
+def _history_messages(history):
+    msgs = []
+    for turn in (history or [])[-MAX_HISTORY_TURNS:]:
+        role = turn.get("role")
+        content = (turn.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            msgs.append({"role": role, "content": content[:4000]})
+    return msgs
+
+
+def answer(text, image_bytes=None, image_mime="image/png", history=None, context=None):
+    """Assistant reply for ``text`` (+ optional image), given earlier ``history`` turns.
+
+    ``history``: [{"role": "user"|"assistant", "content": str}, ...] (text only).
+    ``context``: optional plain-text patient/findings summary from the workspace.
+    Returns {"message": str, "sources": [{n, title, year, url}]} -- sources are only the
+    retrieved papers the reply actually cites.
+    """
     client = _get_client()
     if client is None:
-        return _offline_answer(text, image_bytes is not None)
+        return {"message": _offline_answer(text, image_bytes is not None), "sources": [], "offline": True}
+
+    # Vague questions ("summarise this patient") retrieve poorly on their own, so anchor the
+    # retrieval query to the patient's current findings when the workspace sends them.
+    query = text
+    if context:
+        findings = [ln for ln in context.splitlines() if ln.startswith(("Current scan", "Latest saved report"))]
+        if findings:
+            query = f"{text}\n{' '.join(findings)} Alzheimer's disease structural MRI"
+    hits = [] if image_bytes is not None else _retrieve_for_chat(query)
+    system = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if context:
+        system.append({"role": "system", "content": "CURRENT PATIENT CONTEXT (from the workspace):\n" + context[:4000]})
+    if hits:
+        lit = "\n\n".join(
+            f"[{i + 1}] {h['title']} ({h['year']})\n{h['abstract'][:1200]}" for i, h in enumerate(hits)
+        )
+        system.append({"role": "system", "content": CHAT_RAG_NOTE + "\n\n" + lit})
 
     try:
         content = [{"type": "text", "text": text or "Describe this MRI scan."}]
@@ -196,12 +282,18 @@ def answer(text, image_bytes=None, image_mime="image/png"):
             )
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": content},
-            ],
+            messages=system + _history_messages(history) + [{"role": "user", "content": content}],
         )
-        return resp.choices[0].message.content
+        reply = resp.choices[0].message.content or ""
     except Exception as exc:  # network / quota / rate-limit -> clean offline reply (no raw error in UI)
         print(f"[chatbot] chat LLM unavailable ({exc}); using offline assistant.")
-        return _offline_answer(text, image_bytes is not None)
+        return {"message": _offline_answer(text, image_bytes is not None), "sources": [], "offline": True}
+
+    cited = set()
+    for group in re.findall(r"\[([\d,\s\u2013-]+)\]", reply):  # [1], [2, 3], [4-5]
+        cited.update(int(p) for p in re.split(r"[,\s\u2013-]+", group) if p.isdigit())
+    sources = [
+        {"n": i + 1, "title": h["title"], "year": h["year"], "url": h.get("url", "")}
+        for i, h in enumerate(hits) if (i + 1) in cited
+    ]
+    return {"message": reply, "sources": sources}

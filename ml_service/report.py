@@ -8,8 +8,13 @@ Any input is first turned into a NIfTI volume:
   * volumetric uploads (.nii/.nii.gz/.img) are loaded with nibabel,
   * 2D MRI images (png/jpg) are converted to a pseudo-3D volume so FAST can run.
 
-Tissue *fractions* (CSF/GM/WM as % of brain) are reported alongside absolute
-volumes; fractions are the clinically meaningful, scan-independent biomarkers.
+What is reported depends on the input:
+  * native 3D volume  -> tissue volumes (mm^3, from the NIfTI voxel size) + fractions + ratios
+  * 2D slice          -> single-slice tissue COMPOSITION only (fractions, GM:WM, BPF, brain
+                         area in pixels). A 2D image has no slice thickness or pixel spacing,
+                         so absolute volumes would be fabricated numbers; they are not reported.
+Tissue amounts are partial-volume weighted (mean PVE x voxels), the standard FSL way;
+counting every voxel with non-zero PVE double-counts mixed voxels across classes.
 A pure-image fallback is only used if FSL is unavailable.
 """
 import io
@@ -74,7 +79,7 @@ def _load_volume(file_bytes, filename, tmpdir, depth=10, max_side=128):
     return nii_path, False
 
 
-def _fsl_pipeline(nii_path, tmpdir, run_segmentation=True):
+def _fsl_pipeline(nii_path, tmpdir, run_segmentation=True, native_volume=False):
     biomarkers = {}
 
     # 1) Brain extraction (so stats/segmentation use brain tissue only).
@@ -87,17 +92,18 @@ def _fsl_pipeline(nii_path, tmpdir, run_segmentation=True):
         target = nii_path  # BET can fail on thin/odd volumes; use the raw volume.
         biomarkers["brain_extraction"] = "skipped (BET unavailable for this input)"
 
-    # 2) Basic intensity + volume stats.
+    # 2) Basic intensity + extent stats over the extracted brain (non-zero voxels).
     stats = _run(f'fslstats "{target}" -R -M -V -P 50 -S').split()
     if len(stats) >= 7:
         biomarkers["min_intensity"] = round(float(stats[0]), 2)
         biomarkers["max_intensity"] = round(float(stats[1]), 2)
         biomarkers["mean_intensity"] = round(float(stats[2]), 2)
-        biomarkers["brain_volume_mm3"] = round(float(stats[4]), 2)
+        if native_volume:
+            biomarkers["brain_volume_mm3"] = round(float(stats[4]), 2)
         biomarkers["median_intensity"] = round(float(stats[5]), 2)
         biomarkers["std_intensity"] = round(float(stats[6]), 2)
 
-    # 3) FAST tissue segmentation -> CSF / GM / WM.
+    # 3) FAST tissue segmentation -> CSF / GM / WM (T1: classes ordered by intensity).
     if run_segmentation:
         prefix = os.path.join(tmpdir, "fast")
         _run(f'fast -t 1 -n 3 -H 0.1 -o "{prefix}" "{target}"', timeout=600)
@@ -105,10 +111,14 @@ def _fsl_pipeline(nii_path, tmpdir, run_segmentation=True):
         for label, name in [(0, "csf"), (1, "grey_matter"), (2, "white_matter")]:
             pve = f"{prefix}_pve_{label}.nii.gz"
             if os.path.exists(pve):
-                out = _run(f'fslstats "{pve}" -V').split()  # voxels, volume(mm3)
-                if len(out) >= 2:
-                    vols[name] = float(out[1])
-                    biomarkers[f"{name}_volume_mm3"] = round(float(out[1]), 2)
+                # -M = mean PVE over non-zero voxels, -V = "<voxels> <mm3>" of non-zero voxels.
+                # Partial-volume-weighted amount = mean * count.
+                out = _run(f'fslstats "{pve}" -M -V').split()
+                if len(out) >= 3:
+                    mean_pve, mm3 = float(out[0]), float(out[2])
+                    vols[name] = mean_pve * mm3
+                    if native_volume:
+                        biomarkers[f"{name}_volume_mm3"] = round(mean_pve * mm3, 2)
         total = sum(vols.values())
         if total > 0:
             for name, v in vols.items():
@@ -117,8 +127,7 @@ def _fsl_pipeline(nii_path, tmpdir, run_segmentation=True):
             if vols.get("white_matter"):
                 biomarkers["gm_wm_ratio"] = round(vols.get("grey_matter", 0) / vols["white_matter"], 3)
             brain_tissue = vols.get("grey_matter", 0) + vols.get("white_matter", 0)
-            if total:
-                biomarkers["brain_parenchymal_fraction_pct"] = round(brain_tissue / total * 100, 2)
+            biomarkers["brain_parenchymal_fraction_pct"] = round(brain_tissue / total * 100, 2)
 
     return biomarkers
 
@@ -142,6 +151,9 @@ def _format_report(biomarkers, source, filename, native_volume):
         f"Scan File: {filename}",
         f"Analysis Source: {source}",
         f"Input type: {'native 3D volume' if native_volume else '2D slice (converted to volume for segmentation)'}",
+        "",
+        "Measurement: " + ("volumetric (native 3D scan)" if native_volume
+                           else "single-slice tissue composition (2D image; no absolute volumes)"),
         "",
         "Biomarkers:",
     ]
@@ -185,7 +197,8 @@ def generate_report(file_bytes, filename, run_segmentation=True):
     with tempfile.TemporaryDirectory() as tmp:
         try:
             nii_path, native_volume = _load_volume(file_bytes, filename, tmp)
-            biomarkers = _fsl_pipeline(nii_path, tmp, run_segmentation=run_segmentation)
+            biomarkers = _fsl_pipeline(nii_path, tmp, run_segmentation=run_segmentation,
+                                       native_volume=native_volume)
             source = "FSL (BET + FAST)" if run_segmentation else "FSL (BET)"
         except Exception as exc:
             biomarkers = _image_stats_fallback(file_bytes)
