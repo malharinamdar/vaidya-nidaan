@@ -36,10 +36,12 @@ SYSTEM_PROMPT = (
 # Screening pass before the main model: which language to reply in, and whether the turn is in scope.
 SCREEN_SYSTEM = (
     "You screen messages sent to a medical assistant used by doctors who review brain MRI for Alzheimer's disease. "
-    'Return JSON only: {"language": "...", "in_scope": true|false, "reason": "image"|"topic"|"", "refusal": "..."}.\n'
+    'Return JSON only: {"language": "...", "in_scope": true|false, "reason": "image"|"topic"|"", "refusal": "...", '
+    '"search_query": "..."}.\n'
     "language: the language of the LATEST user message only (ignore earlier turns). Plain English text, however short "
-    "or informal, is English. Romanized Hindi or Marathi (e.g. 'ye kya hai') is 'romanized Hindi' or 'romanized "
-    "Marathi'. If the latest message has no text, use the language of the previous user message, else English.\n"
+    "or informal, is English. Hindi or Marathi typed in LATIN letters (e.g. 'ye kya hai') is 'romanized Hindi' or "
+    "'romanized Marathi'; text in Devanagari or another Indian script is NOT romanized -- name the language (Hindi, "
+    "Marathi, Tamil ...). If the latest message has no text, use the language of the previous user message, else English.\n"
     "in_scope = true for: medicine, healthcare, clinical care, neurology, dementia, neuroimaging, medical images, "
     "biomarkers, medical research, questions about this app or its analyses (classifier, Grad-CAM, FSL, reports, "
     "accuracy), follow-ups that continue an in-scope conversation, and greetings or thanks.\n"
@@ -49,7 +51,11 @@ SCREEN_SYSTEM = (
     "refusal: only when in_scope is false -- one or two friendly sentences, written in the detected language, saying "
     "you can only help with healthcare and medical-imaging questions and suggesting one relevant thing to ask. If the "
     "reason is a non-medical image, say that the image doesn't look like a medical image. "
-    'Otherwise "".'
+    'Otherwise "".\n'
+    "search_query: when in scope, a short ENGLISH search query (5-15 words) for finding PubMed abstracts that answer "
+    "the latest message -- translate it if it is not in English, and resolve references to earlier turns (e.g. 'and "
+    "its treatment?' after a question about Alzheimer's becomes 'Alzheimer disease treatment options'). Use \"\" for "
+    "greetings, thanks, or questions about a specific attached image."
 )
 IMAGE_REFUSAL = (
     "This doesn't look like a medical image. I can analyse brain MRI slices and other medical images, and answer "
@@ -202,7 +208,8 @@ _CITE_GROUP = re.compile(r"\[(\d+(?:\s*[,\u2013-]\s*\d+)*)\]")
 VERIFY_SYSTEM = (
     "You check citations. For each claim, decide for every cited source number whether that source's abstract "
     "supports the claim -- i.e. states it or clearly implies it. Background clinical knowledge does not count; "
-    "only the abstract. Reply with JSON: {\"results\": [{\"id\": <claim id>, \"unsupported\": [<source numbers>]}]}."
+    "only the abstract. Claims may be written in another language (e.g. Hindi, Marathi); judge their meaning against "
+    "the English abstract, not the wording. Reply with JSON: {\"results\": [{\"id\": <claim id>, \"unsupported\": [<source numbers>]}]}."
 )
 
 
@@ -345,9 +352,10 @@ MAX_HISTORY_TURNS = 10
 def _retrieve_for_chat(question):
     """RAG for the assistant: PubMed abstracts for the question, or [] if nothing relevant.
 
-    Uses the same Chroma store + distance floor as medical_rag.py. The embedder is an
-    English sentence model, so non-English questions usually fall past the floor and the
-    assistant simply answers without literature (it never cites what it didn't retrieve).
+    ``question`` is the English search query written by the screening step (the embedder is an
+    English model). Uses the same chunked Chroma store, distance floor and cross-encoder rerank as
+    medical_rag.py; if nothing is close enough the assistant answers without literature (it never
+    cites what it didn't retrieve).
     """
     if not question or len(question.strip()) < 8:
         return []
@@ -377,7 +385,7 @@ def _screen(client, text, image_bytes, image_mime, history):
     Uses the small verifier model with JSON output; the last few turns are included so follow-ups
     ("and its side effects?") are judged in context. Fails open (in scope, script-based language).
     """
-    fallback = {"language": _script_language(text), "in_scope": True, "refusal": ""}
+    fallback = {"language": _script_language(text), "in_scope": True, "refusal": "", "search_query": text}
     recent = [f"{t.get('role')}: {(t.get('content') or '')[:300]}" for t in (history or [])[-4:] if t.get("content")]
     prompt = ("Earlier turns:\n" + "\n".join(recent) + "\n\n" if recent else "") + \
              f"LATEST user message: {text or '(no text, only an image)'}" + \
@@ -392,7 +400,7 @@ def _screen(client, text, image_bytes, image_mime, history):
             messages=[{"role": "system", "content": SCREEN_SYSTEM}, {"role": "user", "content": content}],
             response_format={"type": "json_object"},
             temperature=0,
-            max_tokens=200,
+            max_tokens=260,
             timeout=15,
         )
         data = json.loads(resp.choices[0].message.content or "{}")
@@ -400,11 +408,16 @@ def _screen(client, text, image_bytes, image_mime, history):
         print(f"[chatbot] screening unavailable ({exc}); answering without it.")
         return fallback
     language = str(data.get("language") or "").strip() or fallback["language"]
+    # The script is checked in code: text typed in an Indian script is never "romanized".
+    if _script_language(text) != "English" and "romanized" in language.lower():
+        base = re.sub(r"(?i)romanized", "", language).strip() or "the user's language"
+        language = f"{base}, written in its native script"
     in_scope = data.get("in_scope") is not False
     refusal = str(data.get("refusal") or "").strip()
     if not in_scope and data.get("reason") == "image" and language.lower().startswith("english"):
         refusal = IMAGE_REFUSAL
-    return {"language": language, "in_scope": in_scope, "refusal": refusal}
+    return {"language": language, "in_scope": in_scope, "refusal": refusal,
+            "search_query": str(data.get("search_query") or "").strip()}
 
 
 def answer(text, image_bytes=None, image_mime="image/png", history=None, context=None):
@@ -424,13 +437,14 @@ def answer(text, image_bytes=None, image_mime="image/png", history=None, context
         return {"message": screen["refusal"] or DEFAULT_REFUSAL, "sources": [],
                 "citation_check": {"checked": 0, "supported": 0, "removed": 0}, "in_scope": False}
 
-    # Vague questions ("summarise this patient") retrieve poorly on their own, so anchor the
-    # retrieval query to the patient's current findings when the workspace sends them.
-    query = text
+    # Retrieval runs on the screening step's English search query: the embedder only understands
+    # English, and follow-ups ("and its treatment?") need the earlier turns resolved. Vague questions
+    # ("summarise this patient") are also anchored to the patient's current findings.
+    query = screen.get("search_query") or ""
     if context:
         findings = [ln for ln in context.splitlines() if ln.startswith(("Current scan", "Latest saved report"))]
         if findings:
-            query = f"{text}\n{' '.join(findings)} Alzheimer's disease structural MRI"
+            query = f"{query or text}\n{' '.join(findings)} Alzheimer's disease structural MRI"
     hits = [] if image_bytes is not None else _retrieve_for_chat(query)
     system = [{"role": "system", "content": SYSTEM_PROMPT}]
     if context:

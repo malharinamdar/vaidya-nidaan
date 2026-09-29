@@ -43,10 +43,14 @@ image = (
         "GRADCAM_LAYER": "block5_conv4",
         "OPENAI_MODEL": "gpt-4o",
     })
-    # Bake Chroma's default embedding model into the image so the first request doesn't download it.
+    # Bake Chroma's default embedding model and the RAG reranker (cross-encoder, ONNX) into the
+    # image so the first request doesn't download them.
     .run_commands(
         "python -c \"from chromadb.utils.embedding_functions import DefaultEmbeddingFunction as E; "
-        "print(len(E()(['warm-up'])[0]), 'dim embedder ready')\""
+        "print(len(E()(['warm-up'])[0]), 'dim embedder ready')\"",
+        "python -c \"from huggingface_hub import hf_hub_download as d; "
+        "[d('cross-encoder/ms-marco-MiniLM-L6-v2', f) for f in ('tokenizer.json', 'onnx/model.onnx')]; "
+        "print('reranker ready')\"",
     )
     # The service code, model weights and RAG store are MOUNTED (not copied): Modal re-syncs
     # them on every `modal deploy`, so code changes always ship. (A copy=True layer is cached.)
