@@ -39,7 +39,8 @@ async function findOwn(req, res) {
   return convo;
 }
 
-// List conversations: ?patient=<id> for a patient's chats, ?patient=general for the general assistant.
+// List conversations (newest first, with the patient's name for patient chats).
+// No filter = all of the doctor's chats (the sidebar); ?patient=<id> or ?patient=general to narrow.
 router.get('/', async (req, res) => {
   try {
     const scope = req.query.patient;
@@ -49,8 +50,15 @@ router.get('/', async (req, res) => {
     const convos = await Conversation.aggregate([
       { $match: match },
       { $sort: { updatedAt: -1 } },
-      { $limit: 40 },
-      { $project: { title: 1, patient: 1, updatedAt: 1, createdAt: 1, messageCount: { $size: '$messages' } } },
+      { $limit: 60 },
+      { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'p', pipeline: [{ $project: { name: 1 } }] } },
+      {
+        $project: {
+          title: 1, patient: 1, updatedAt: 1, createdAt: 1,
+          messageCount: { $size: '$messages' },
+          patientName: { $first: '$p.name' },
+        },
+      },
     ]);
     res.json({ conversations: convos.map((c) => ({ ...c, id: c._id })) });
   } catch (error) {

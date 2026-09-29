@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { LuArrowUp, LuArrowUpRight, LuHistory, LuPaperclip, LuRotateCcw, LuSquarePen, LuTrash2, LuX } from "react-icons/lu";
+import { LuArrowUp, LuArrowUpRight, LuPaperclip, LuRotateCcw, LuSquarePen, LuX } from "react-icons/lu";
 import { LogoMark } from "./Logo";
-import { cx, useToast } from "./ui";
+import { cx } from "./ui";
 import { api, ml } from "../lib/api";
-import { timeAgo } from "../lib/format";
+import { useChats } from "../lib/chats";
 
 /** Downscale an attached image to a small JPEG data URL for the saved chat history. */
 function makeThumb(file, max = 320) {
@@ -39,17 +40,17 @@ const DEFAULT_SUGGESTIONS = [
 
 /**
  * GPT-4o assistant with conversation memory, image attachments and PubMed citations.
- * Conversations are saved to the API (per patient, or "general" when patientId is null),
- * so the latest one resumes when the assistant is reopened.
+ * Conversations are saved to the API (per patient, or general when patientId is null) and listed
+ * in the sidebar; the open one is the `?c=<id>` URL parameter, so no id = a new chat.
  * `context` (optional) is a plain-text patient/findings summary sent with each turn.
  */
-export default function ChatPanel({ patientId = null, context, suggestions = DEFAULT_SUGGESTIONS, title, subtitle, className }) {
-  const toast = useToast();
+export default function ChatPanel({ patientId = null, patientName, context, suggestions = DEFAULT_SUGGESTIONS, title, subtitle, className }) {
+  const [params, setParams] = useSearchParams();
+  const urlId = params.get("c");
+  const chats = useChats();
   const [messages, setMessages] = useState([]);
-  const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const activeRef = useRef(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [loadingConvo, setLoadingConvo] = useState(false);
   const [thumb, setThumb] = useState(null);
   const [input, setInput] = useState("");
@@ -65,41 +66,35 @@ export default function ChatPanel({ patientId = null, context, suggestions = DEF
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, busy]);
 
-  const selectConversation = useCallback(async (id) => {
-    setHistoryOpen(false);
-    if (!id) {
-      activeRef.current = null;
-      setActiveId(null);
-      setMessages([]);
-      return;
-    }
-    setLoadingConvo(true);
-    try {
-      const { conversation } = await api(`/api/conversations/${id}`);
-      activeRef.current = conversation.id;
-      setActiveId(conversation.id);
-      setMessages(conversation.messages.map((m) => ({ role: m.role, content: m.content, image: m.image, sources: m.sources })));
-    } catch {
-      setMessages([]);
-    } finally {
-      setLoadingConvo(false);
-    }
-  }, []);
+  const openConversation = useCallback(
+    async (id) => {
+      if (!id) {
+        activeRef.current = null;
+        setActiveId(null);
+        setMessages([]);
+        return;
+      }
+      activeRef.current = id;
+      setActiveId(id);
+      setLoadingConvo(true);
+      try {
+        const { conversation } = await api(`/api/conversations/${id}`);
+        if (activeRef.current !== id) return; // another chat was opened meanwhile
+        setMessages(conversation.messages.map((m) => ({ role: m.role, content: m.content, image: m.image, sources: m.sources })));
+      } catch {
+        chats?.forget(id); // deleted elsewhere
+        setParams({}, { replace: true });
+      } finally {
+        setLoadingConvo(false);
+      }
+    },
+    [chats, setParams]
+  );
 
-  // Load this scope's saved conversations and resume the most recent one.
+  // The URL decides which chat is open (sidebar clicks, "New chat", back/forward).
   useEffect(() => {
-    let alive = true;
-    api(`/api/conversations?patient=${patientId || "general"}`)
-      .then(({ conversations: list }) => {
-        if (!alive) return;
-        setConversations(list);
-        if (list[0]) selectConversation(list[0].id);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [patientId, selectConversation]);
+    if ((urlId || null) !== activeRef.current) openConversation(urlId);
+  }, [urlId, openConversation]);
 
   const persist = async (userMsg, assistantMsg) => {
     const payload = [
@@ -112,28 +107,22 @@ export default function ChatPanel({ patientId = null, context, suggestions = DEF
         const { conversation } = await api("/api/conversations", { method: "POST", body: { patient: patientId, title, messages: payload } });
         activeRef.current = conversation.id;
         setActiveId(conversation.id);
-        setConversations((cs) => [{ id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt, messageCount: 2 }, ...cs]);
+        setParams({ c: conversation.id }, { replace: true });
+        chats?.upsert({
+          id: conversation.id,
+          title: conversation.title,
+          patient: patientId,
+          patientName,
+          updatedAt: conversation.updatedAt,
+          messageCount: 2,
+        });
       } else {
         const id = activeRef.current;
         await api(`/api/conversations/${id}/messages`, { method: "POST", body: { messages: payload } });
-        setConversations((cs) => {
-          const cur = cs.find((c) => c.id === id);
-          return cur ? [{ ...cur, updatedAt: new Date().toISOString(), messageCount: (cur.messageCount || 0) + 2 }, ...cs.filter((c) => c.id !== id)] : cs;
-        });
+        chats?.touch(id);
       }
     } catch (e) {
       console.warn("Could not save the conversation:", e.message);
-    }
-  };
-
-  const removeConversation = async (id) => {
-    try {
-      await api(`/api/conversations/${id}`, { method: "DELETE" });
-      setConversations((cs) => cs.filter((c) => c.id !== id));
-      if (activeRef.current === id) selectConversation(null);
-      toast("Conversation deleted");
-    } catch (e) {
-      toast(e.message, "error");
     }
   };
 
@@ -196,73 +185,25 @@ export default function ChatPanel({ patientId = null, context, suggestions = DEF
     }
   };
 
-  const active = conversations.find((c) => c.id === activeId);
+  const active = chats?.chats.find((c) => c.id === activeId);
 
   return (
     <div className={cx("flex min-h-[560px] flex-col", className)}>
-      {/* Conversation bar: history + new chat */}
-      <div className="relative flex items-center gap-2 border-b border-ink-100 px-3 py-2 sm:px-4">
+      {/* Conversation bar: current chat title + new chat (saved chats live in the sidebar) */}
+      <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-2.5 sm:px-5">
+        <p className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink-700">
+          {active ? active.title : messages.length ? "New conversation" : "New chat"}
+        </p>
         <button
-          onClick={() => setHistoryOpen((v) => !v)}
-          className={cx(
-            "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-medium transition",
-            historyOpen ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-ink-100 hover:text-ink-900"
-          )}
-        >
-          <LuHistory className="h-4 w-4" />
-          History
-          {conversations.length > 0 && (
-            <span className={cx("rounded-full px-1.5 font-mono text-[11px]", historyOpen ? "bg-white/20" : "bg-ink-100 text-ink-600")}>
-              {conversations.length}
-            </span>
-          )}
-        </button>
-        <p className="min-w-0 flex-1 truncate text-[13px] text-ink-500">{active ? active.title : messages.length ? "New conversation" : ""}</p>
-        <button
-          onClick={() => selectConversation(null)}
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium text-ink-600 transition hover:bg-ink-100 hover:text-ink-900"
+          onClick={() => (urlId ? setParams({}) : openConversation(null))}
+          disabled={!activeId && !messages.length}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium text-ink-600 transition hover:bg-ink-100 hover:text-ink-900 disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <LuSquarePen className="h-4 w-4" /> New chat
         </button>
-
-        <AnimatePresence>
-          {historyOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              className="absolute top-full left-3 z-20 mt-2 w-[min(92vw,360px)] overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-[var(--shadow-lift)]"
-            >
-              <p className="border-b border-ink-100 px-4 py-2.5 font-mono text-[10.5px] tracking-[0.14em] text-ink-400 uppercase">Saved conversations</p>
-              {conversations.length === 0 ? (
-                <p className="px-4 py-6 text-center text-[13px] text-ink-500">No saved conversations yet.</p>
-              ) : (
-                <ul className="max-h-80 divide-y divide-ink-100 overflow-y-auto">
-                  {conversations.map((c) => (
-                    <li key={c.id} className={cx("group flex items-center gap-2 pr-2", c.id === activeId && "bg-brand-50/60")}>
-                      <button onClick={() => selectConversation(c.id)} className="min-w-0 flex-1 px-4 py-2.5 text-left">
-                        <span className="block truncate text-[13.5px] font-medium text-ink-900">{c.title}</span>
-                        <span className="block text-[11.5px] text-ink-500">
-                          {c.messageCount || 0} messages · {timeAgo(c.updatedAt)}
-                        </span>
-                      </button>
-                      <button
-                        aria-label="Delete conversation"
-                        onClick={() => removeConversation(c.id)}
-                        className="rounded-lg p-1.5 text-ink-300 opacity-0 transition group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 focus:opacity-100"
-                      >
-                        <LuTrash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6" onClick={() => historyOpen && setHistoryOpen(false)}>
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         {loadingConvo ? (
           <div className="mx-auto max-w-3xl space-y-4">
             <div className="skeleton ml-auto h-10 w-1/2 rounded-3xl" />

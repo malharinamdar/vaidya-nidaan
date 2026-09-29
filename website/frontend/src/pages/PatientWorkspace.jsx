@@ -203,6 +203,7 @@ export default function PatientWorkspace() {
             <ChatPanel
               key={patient.id}
               patientId={patient.id}
+              patientName={patient.name}
               context={patientContext(patient, scan?.results)}
               title={`Ask about ${patient.name.split(" ")[0]}`}
               subtitle="The assistant sees this patient's details and the findings from the current scan, and cites PubMed where relevant."

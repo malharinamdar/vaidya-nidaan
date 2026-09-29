@@ -33,9 +33,54 @@ export function ResultBadge({ result }) {
   );
 }
 
-function greeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+// Greeting by the viewer's local time. Each slot has a few lines; the pick changes daily
+// (stable within a day, so it doesn't flicker between visits).
+const GREETINGS = [
+  [4, [ // midnight - 4 am
+    (n) => `Burning the midnight oil, ${n}?`,
+    (n) => `Still up, ${n}?`,
+    (n) => `Late-night rounds, ${n}?`,
+    (n) => `The night shift, ${n}.`,
+    (n) => `Neurons never sleep, ${n}.`,
+  ]],
+  [6, [ // 4 - 6 am
+    (n) => `Up before the sun, ${n}?`,
+    (n) => `An early start, ${n}.`,
+    (n) => `Dawn patrol, ${n}?`,
+    (n) => `The early bird gets the scans, ${n}.`,
+  ]],
+  [12, [ // 6 am - noon
+    (n) => `Good morning, ${n}`,
+    (n) => `Morning rounds, ${n}?`,
+    (n) => `Rise and scan, ${n}.`,
+    (n) => `Coffee first, ${n}?`,
+    (n) => `Bright and early, ${n}.`,
+  ]],
+  [17, [ // noon - 5 pm
+    (n) => `Good afternoon, ${n}`,
+    (n) => `Post-lunch rounds, ${n}?`,
+    (n) => `Chai break, ${n}?`,
+    (n) => `Afternoon, ${n}. Back at it?`,
+    (n) => `Halfway there, ${n}.`,
+  ]],
+  [21, [ // 5 - 9 pm
+    (n) => `Good evening, ${n}`,
+    (n) => `Evening rounds, ${n}?`,
+    (n) => `One last scan, ${n}?`,
+    (n) => `Winding down, ${n}?`,
+  ]],
+  [24, [ // 9 pm - midnight
+    (n) => `Working late, ${n}?`,
+    (n) => `Night owl mode, ${n}?`,
+    (n) => `Quiet hours, ${n}.`,
+    (n) => `One more report, ${n}?`,
+  ]],
+];
+function greeting(name, now = new Date()) {
+  const h = now.getHours();
+  const day = Math.floor((now.getTime() - now.getTimezoneOffset() * 60_000) / 86_400_000);
+  const [, lines] = GREETINGS.find(([until]) => h < until);
+  return lines[day % lines.length](name);
 }
 
 function StatCard({ label, value, icon: Icon, hint, tone = "ink" }) {
@@ -116,7 +161,7 @@ export default function Dashboard() {
         <div>
           <p className="label-eyebrow">{new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</p>
           <h1 className="mt-2 font-display text-[44px] leading-none text-ink-900 sm:text-[52px]">
-            {greeting()}, {doctor?.isDemo ? "Doctor" : `Dr. ${first || ""}`}
+            {greeting(doctor?.isDemo ? "Doctor" : `Dr. ${first || ""}`.trim())}
           </h1>
           <p className="mt-3 text-[15px] text-ink-500">Your patients, their latest scans, and what the models found.</p>
         </div>

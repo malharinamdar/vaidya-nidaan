@@ -15,16 +15,69 @@ from config import MODEL_EVAL_SUMMARY, OPENAI_API_KEY, OPENAI_MODEL
 VERIFIER_MODEL = os.environ.get("OPENAI_VERIFIER_MODEL", "gpt-4o-mini")
 
 SYSTEM_PROMPT = (
-    "You are Vaidya Nidaan, a multilingual medical-imaging assistant that supports a "
-    "QUALIFIED DOCTOR (not a layperson) reviewing brain MRI scans for Alzheimer's. "
-    "When the user attaches an MRI image, DO NOT refuse — describe what is visible in an "
-    "observational, educational way: anatomical regions (ventricles, hippocampus/medial "
-    "temporal lobe, cortical surface), left/right symmetry, sulcal widening, and intensity "
-    "patterns, and note features that are commonly relevant to atrophy or dementia. Make "
-    "clear you are providing assistive observations, not a final diagnosis, and that a "
-    "radiologist/neurologist confirms findings. Reply in the same language the user writes "
-    "in (English, Hindi, Marathi or any regional Indian language). Be clear and concise."
+    "You are Vaidya Nidaan, a medical-imaging assistant that supports a QUALIFIED DOCTOR (not a layperson) "
+    "reviewing brain MRI scans for Alzheimer's disease.\n"
+    "Scope: help only with medicine and healthcare -- neurology, dementia, neuroimaging, other clinical topics, "
+    "patient care, medical research, and how this app's analyses work (the VGG-19 classifier, Grad-CAM++, FSL "
+    "biomarkers, reports). For anything else (sports, politics, current affairs, entertainment, coding, general "
+    "trivia) do not answer; say in one or two sentences that you can only help with healthcare and medical-imaging "
+    "questions, and suggest a relevant question.\n"
+    "Images: when the user attaches a medical image (MRI, CT, X-ray, lab report, clinical photo), DO NOT refuse -- "
+    "describe what is visible in an observational, educational way: anatomical regions (ventricles, hippocampus/"
+    "medial temporal lobe, cortical surface), left/right symmetry, sulcal widening, intensity patterns, and features "
+    "commonly relevant to atrophy or dementia. If the image is not medical (a chat or app screenshot, a document "
+    "unrelated to health, an everyday photo), say it isn't a medical image and that you can only analyse medical "
+    "images -- do not describe its contents.\n"
+    "Present observations as assistive, not a final diagnosis. Be clear and concise.\n"
+    "Language: reply in the language of the user's LATEST message (a system note names it). Never switch language "
+    "because of the patient context, earlier turns or the literature."
 )
+
+# Screening pass before the main model: which language to reply in, and whether the turn is in scope.
+SCREEN_SYSTEM = (
+    "You screen messages sent to a medical assistant used by doctors who review brain MRI for Alzheimer's disease. "
+    'Return JSON only: {"language": "...", "in_scope": true|false, "reason": "image"|"topic"|"", "refusal": "..."}.\n'
+    "language: the language of the LATEST user message only (ignore earlier turns). Plain English text, however short "
+    "or informal, is English. Romanized Hindi or Marathi (e.g. 'ye kya hai') is 'romanized Hindi' or 'romanized "
+    "Marathi'. If the latest message has no text, use the language of the previous user message, else English.\n"
+    "in_scope = true for: medicine, healthcare, clinical care, neurology, dementia, neuroimaging, medical images, "
+    "biomarkers, medical research, questions about this app or its analyses (classifier, Grad-CAM, FSL, reports, "
+    "accuracy), follow-ups that continue an in-scope conversation, and greetings or thanks.\n"
+    "in_scope = false for: sports, politics, current affairs, entertainment, general knowledge, coding, homework, "
+    "and attached images that are not medical (chat or app screenshots, unrelated documents, everyday photos).\n"
+    "reason: 'image' when the attached image is not medical, 'topic' when the question is off-topic, else ''.\n"
+    "refusal: only when in_scope is false -- one or two friendly sentences, written in the detected language, saying "
+    "you can only help with healthcare and medical-imaging questions and suggesting one relevant thing to ask. If the "
+    "reason is a non-medical image, say that the image doesn't look like a medical image. "
+    'Otherwise "".'
+)
+IMAGE_REFUSAL = (
+    "This doesn't look like a medical image. I can analyse brain MRI slices and other medical images, and answer "
+    "healthcare questions. Attach a scan or ask about MRI findings."
+)
+DEFAULT_REFUSAL = (
+    "I can only help with healthcare and medical-imaging questions, such as MRI findings, dementia, biomarkers or "
+    "this patient's results. Try asking about one of those."
+)
+
+# Unicode blocks of Indian (and a few other) scripts, used when the screening call is unavailable.
+_SCRIPTS = [
+    ((0x0900, 0x097F), "Hindi or Marathi (reply in the same one, in Devanagari script)"),
+    ((0x0980, 0x09FF), "Bengali"), ((0x0A00, 0x0A7F), "Punjabi"), ((0x0A80, 0x0AFF), "Gujarati"),
+    ((0x0B00, 0x0B7F), "Odia"), ((0x0B80, 0x0BFF), "Tamil"), ((0x0C00, 0x0C7F), "Telugu"),
+    ((0x0C80, 0x0CFF), "Kannada"), ((0x0D00, 0x0D7F), "Malayalam"), ((0x0600, 0x06FF), "Urdu"),
+]
+
+
+def _script_language(text):
+    counts = {}
+    for ch in text or "":
+        cp = ord(ch)
+        for (lo, hi), name in _SCRIPTS:
+            if lo <= cp <= hi:
+                counts[name] = counts.get(name, 0) + 1
+    return max(counts, key=counts.get) if counts else "English"
+
 
 _client = None
 
@@ -318,6 +371,42 @@ def _history_messages(history):
     return msgs
 
 
+def _screen(client, text, image_bytes, image_mime, history):
+    """Detect the reply language and whether this turn is in scope (healthcare / medical imaging).
+
+    Uses the small verifier model with JSON output; the last few turns are included so follow-ups
+    ("and its side effects?") are judged in context. Fails open (in scope, script-based language).
+    """
+    fallback = {"language": _script_language(text), "in_scope": True, "refusal": ""}
+    recent = [f"{t.get('role')}: {(t.get('content') or '')[:300]}" for t in (history or [])[-4:] if t.get("content")]
+    prompt = ("Earlier turns:\n" + "\n".join(recent) + "\n\n" if recent else "") + \
+             f"LATEST user message: {text or '(no text, only an image)'}" + \
+             ("\n(An image is attached; judge whether it is a medical image.)" if image_bytes is not None else "")
+    content = [{"type": "text", "text": prompt}]
+    if image_bytes is not None:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        content.append({"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{b64}", "detail": "low"}})
+    try:
+        resp = client.chat.completions.create(
+            model=VERIFIER_MODEL,
+            messages=[{"role": "system", "content": SCREEN_SYSTEM}, {"role": "user", "content": content}],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=200,
+            timeout=15,
+        )
+        data = json.loads(resp.choices[0].message.content or "{}")
+    except Exception as exc:
+        print(f"[chatbot] screening unavailable ({exc}); answering without it.")
+        return fallback
+    language = str(data.get("language") or "").strip() or fallback["language"]
+    in_scope = data.get("in_scope") is not False
+    refusal = str(data.get("refusal") or "").strip()
+    if not in_scope and data.get("reason") == "image" and language.lower().startswith("english"):
+        refusal = IMAGE_REFUSAL
+    return {"language": language, "in_scope": in_scope, "refusal": refusal}
+
+
 def answer(text, image_bytes=None, image_mime="image/png", history=None, context=None):
     """Assistant reply for ``text`` (+ optional image), given earlier ``history`` turns.
 
@@ -329,6 +418,11 @@ def answer(text, image_bytes=None, image_mime="image/png", history=None, context
     client = _get_client()
     if client is None:
         return {"message": _offline_answer(text, image_bytes is not None), "sources": [], "offline": True}
+
+    screen = _screen(client, text, image_bytes, image_mime, history)
+    if not screen["in_scope"]:
+        return {"message": screen["refusal"] or DEFAULT_REFUSAL, "sources": [],
+                "citation_check": {"checked": 0, "supported": 0, "removed": 0}, "in_scope": False}
 
     # Vague questions ("summarise this patient") retrieve poorly on their own, so anchor the
     # retrieval query to the patient's current findings when the workspace sends them.
@@ -346,6 +440,8 @@ def answer(text, image_bytes=None, image_mime="image/png", history=None, context
             f"[{i + 1}] {h['title']} ({h['year']})\n{h['abstract'][:1200]}" for i, h in enumerate(hits)
         )
         system.append({"role": "system", "content": CHAT_RAG_NOTE + "\n\n" + lit})
+    system.append({"role": "system", "content": f"Reply in {screen['language']}, the language of the user's latest "
+                                                 "message. Do not switch to any other language."})
 
     try:
         content = [{"type": "text", "text": text or "Describe this MRI scan."}]

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { LuBot, LuCircleHelp, LuLayoutDashboard, LuLogOut, LuMenu, LuPlus, LuX, LuTriangleAlert } from "react-icons/lu";
+import { LuBot, LuCircleHelp, LuLayoutDashboard, LuLogOut, LuMenu, LuPlus, LuSquarePen, LuTrash2, LuX, LuTriangleAlert } from "react-icons/lu";
 import Logo from "./Logo";
 import ModelCard from "./ModelCard";
-import { Modal, cx } from "./ui";
+import { Modal, cx, useToast } from "./ui";
+import { ChatsProvider, chatPath, groupChats, useChats } from "../lib/chats";
 import { useAuth } from "../lib/auth";
 import { initials } from "../lib/format";
 
@@ -12,6 +13,77 @@ const NAV = [
   { to: "/dashboard", label: "Patients", icon: LuLayoutDashboard },
   { to: "/assistant", label: "AI Assistant", icon: LuBot },
 ];
+
+/** Saved assistant chats, ChatGPT-style: grouped by date, click to reopen, hover to delete. */
+function ChatList({ onNavigate }) {
+  const { chats, remove } = useChats();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const activeId = new URLSearchParams(location.search).get("c");
+
+  const del = async (c) => {
+    if (!window.confirm(`Delete "${c.title}"?`)) return;
+    try {
+      await remove(c.id);
+      if (c.id === activeId) navigate(location.pathname, { replace: true });
+      toast("Chat deleted");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  };
+
+  return (
+    <div className="mt-6 flex min-h-0 flex-1 flex-col">
+      <div className="mb-1 flex items-center justify-between px-3">
+        <p className="font-mono text-[10px] tracking-[0.16em] text-ink-400 uppercase">Chats</p>
+        <Link
+          to="/assistant"
+          onClick={onNavigate}
+          title="New chat"
+          aria-label="New chat"
+          className="rounded-lg p-1.5 text-ink-400 transition hover:bg-ink-100 hover:text-ink-900"
+        >
+          <LuSquarePen className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+      <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-2">
+        {chats.length === 0 ? (
+          <p className="px-3 py-1.5 text-[12.5px] text-ink-400">Your conversations will appear here.</p>
+        ) : (
+          groupChats(chats).map(([label, items]) => (
+            <div key={label} className="mb-2">
+              <p className="px-3 pt-2 pb-1 text-[11px] font-medium text-ink-400">{label}</p>
+              {items.map((c) => (
+                <div
+                  key={c.id}
+                  className={cx(
+                    "group flex items-center rounded-xl transition",
+                    c.id === activeId ? "bg-ink-100/80" : "hover:bg-ink-50"
+                  )}
+                >
+                  <Link to={chatPath(c)} onClick={onNavigate} className="min-w-0 flex-1 py-1.5 pr-1 pl-3" title={c.title}>
+                    <span className={cx("block truncate text-[13px]", c.id === activeId ? "font-medium text-ink-900" : "text-ink-600")}>
+                      {c.title}
+                    </span>
+                    {c.patientName && <span className="block truncate text-[11px] text-ink-400">{c.patientName}</span>}
+                  </Link>
+                  <button
+                    onClick={() => del(c)}
+                    aria-label={`Delete ${c.title}`}
+                    className="mr-1 shrink-0 rounded-lg p-1.5 text-ink-300 opacity-0 transition group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 focus:opacity-100"
+                  >
+                    <LuTrash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
 
 function Sidebar({ onNavigate, onModelCard }) {
   const { doctor, signOut, isDemo } = useAuth();
@@ -54,7 +126,9 @@ function Sidebar({ onNavigate, onModelCard }) {
         ))}
       </nav>
 
-      <div className="mt-auto space-y-2">
+      <ChatList onNavigate={onNavigate} />
+
+      <div className="mt-3 space-y-2 border-t border-ink-100 pt-3">
         <button
           onClick={onModelCard}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-[13.5px] font-medium text-ink-500 transition hover:bg-ink-50 hover:text-ink-900"
@@ -91,6 +165,7 @@ export default function AppShell() {
   const [modelCard, setModelCard] = useState(false);
   const { isDemo } = useAuth();
   return (
+    <ChatsProvider>
     <div className="min-h-screen bg-ink-50">
       {/* soft atmospheric wash behind the workspace */}
       <div aria-hidden className="no-print pointer-events-none fixed inset-x-0 top-0 h-[420px] bg-[url('/art/hero-glass.webp')] bg-cover bg-top opacity-[0.22] [mask-image:linear-gradient(to_bottom,black,transparent)]" />
@@ -145,5 +220,6 @@ export default function AppShell() {
         <ModelCard />
       </Modal>
     </div>
+    </ChatsProvider>
   );
 }

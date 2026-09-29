@@ -20,7 +20,7 @@ import threading
 import time
 from collections import OrderedDict
 
-CACHE_VERSION = "2026-09-29-v2b"
+CACHE_VERSION = "2026-09-30-chat"
 TTL_S = int(os.environ.get("CACHE_TTL_S", str(24 * 3600)))
 MAX_ITEMS = int(os.environ.get("CACHE_MAX_ITEMS", "96"))
 REDIS_URL = os.environ.get("REDIS_URL", "").strip()
