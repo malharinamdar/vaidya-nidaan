@@ -40,23 +40,11 @@ Marathi, …) answers follow-up questions with PubMed citations; conversations a
 | **Input check** | Two stages before any analysis: pixel heuristics, then a Mahalanobis out-of-distribution test on VGG-19 `block4_pool` features fitted to OASIS slices (`build_ood_stats.py`). Screenshots, photos and documents are rejected in the UI as "not a brain MRI". |
 | **Citation verification** | A second pass (`gpt-4o-mini`) checks every cited sentence in the rationale and assistant replies against the cited abstract and removes unsupported citations. |
 
-### Data and training
+### Data and model
 
-- **Data:** OASIS-1 cross-sectional MRI ([imagesOASIS](https://www.kaggle.com/datasets/ninadaithal/imagesoasis)): 86,437 axial T1 slices from 347 subjects, 81 demented (CDR ≥ 0.5) and 266 non-demented.
-- **Split:** by patient, stratified by diagnosis: 243 train / 52 validation / 52 test subjects, so no brain appears in more than one split.
-- **Training:** [`alzheimer_model_v2.ipynb`](research/notebooks/alzheimer_model_v2.ipynb): ImageNet preprocessing, a 4-epoch head warm-up, then block5 fine-tuning with early stopping; class-weighted loss for the 3.5 : 1 imbalance; flip / rotation / zoom / contrast augmentation.
-- **Threshold:** a slice is called Demented at P(Demented) ≥ 0.13, the cut-off that maximised balanced accuracy on the validation patients (0.32 when a patient's slices are averaged).
-
-**Test results** (52 held-out patients, [`research/results/v2`](research/results/v2)):
-
-| | Per slice (12,444 slices) | Per patient (slices averaged) |
-|---|---|---|
-| ROC-AUC | 0.85 | 0.89 (95% CI 0.79–0.97) |
-| Balanced accuracy | 0.78 | 0.78 (0.64–0.90) |
-| Sensitivity | 0.89 | 0.83 |
-| Specificity | 0.67 | 0.73 |
-
-Confidence intervals: 1,000 bootstrap resamples of the test patients. For reference, the same frozen-feature head reaches 95.5% accuracy on a random slice-level split and 74.8% on the patient split. With a random split, slices of the same brain land in both train and test, which is how the earlier v1 model ([`final_alzheimer_model.ipynb`](research/notebooks/final_alzheimer_model.ipynb)) was evaluated. [`report.ipynb`](research/notebooks/report.ipynb) prototypes the FSL biomarker report.
+- **Dataset:** OASIS-1 brain MRI scans ([imagesOASIS](https://www.kaggle.com/datasets/ninadaithal/imagesoasis) on Kaggle): 86,437 axial MRI slices from 347 people, 81 with dementia and 266 without.
+- **Model:** VGG-19 pretrained on ImageNet (transfer learning), with the last convolutional block fine-tuned to classify a slice as Demented or Non-demented. It is trained and tested on different patients.
+- **Notebook:** [`alzheimer_model_v2.ipynb`](research/notebooks/alzheimer_model_v2.ipynb) trains the model.
 
 ---
 
