@@ -5,6 +5,8 @@
 > 🏅 **3rd place** of 400+ teams at PICT Techfiesta 2025
 >
 > **Live demo → [vaidya-nidaan.vercel.app](https://vaidya-nidaan.vercel.app)** (click *Try the demo* — no sign-up)
+>
+> The original Techfiesta 2025 version is on the [`v1-techfiesta-2025`](https://github.com/malharinamdar/vaidya-nidaan/tree/v1-techfiesta-2025) branch.
 
 **Explainable decision support for Alzheimer's MRI.** Upload one axial brain-MRI slice and Vaidya Nidaan:
 
