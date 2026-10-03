@@ -1,4 +1,7 @@
 # Vaidya Nidaan
+
+> **Version 1: the original Techfiesta 2025 app** (original design, runs end to end with the trained model). Kept for reference; the current version is on the [`main`](https://github.com/malharinamdar/vaidya-nidaan) branch. Accuracy figures here come from a slice-level split; `main` uses a patient-level split.
+
 *'Vaidya Nidaan' translates from Sanskrit as "Medical Diagnosis".*
 
 > 🏅 **3rd Place** (among 400+ teams) at PICT Techfiesta 2025 Hackathon
